@@ -1,11 +1,12 @@
 name: "Hotdeal Monitor"
 slug: "hotdeal_alarm"
-version: "1.0.0"
+version: "1.0.1"
 description: "핫딜 알림 서비스입니다."
 arch:
   - amd64
   - armv7
   - aarch64
 image: "tmuu/hotdeal_alarm" # Docker Hub 이미지 주소
+
 
 
