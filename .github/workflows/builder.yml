@@ -20,6 +20,6 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: ./hotdeal_alarm
+          context: ./hotdeal_alarm/hotdeal_alarm
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/hotdeal_alarm:latest
