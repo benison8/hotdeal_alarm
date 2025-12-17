@@ -23,5 +23,5 @@ jobs:
           context: ./hotdeal_alarm
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/hotdeal_alarm:latest
-            ${{ secrets.DOCKER_USERNAME }}/hotdeal_alarm:1.0.0
+            tmuu/hotdeal_alarm:latest
+            tmuu/hotdeal_alarm:1.0.0
