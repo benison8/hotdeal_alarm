@@ -1,6 +1,6 @@
 name: "Hotdeal Monitor"
 slug: "hotdeal_alarm"
-version: "1.0.10"
+version: "1.0.11"
 description: "핫딜 알림 서비스입니다."
 arch:
   - amd64
@@ -8,6 +8,10 @@ arch:
   - aarch64
 image: "tmuu/hotdeal_alarm" # Docker Hub 이미지 주소
 
+build_from:
+  amd64: ghcr.io/home-assistant/base-python:3.11
+  arm64: ghcr.io/home-assistant/base-python:3.11
+  armv7: ghcr.io/home-assistant/base-python:3.11
 
 
 
