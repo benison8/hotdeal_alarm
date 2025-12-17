@@ -17,5 +17,6 @@ COPY . .
 # 실행 권한 부여
 RUN chmod a+x /app/run.sh
 
-# 실행 명령
+# 컨테이너 실행 시 run.sh를 직접 실행하도록 설정
 CMD [ "/app/run.sh" ]
+
