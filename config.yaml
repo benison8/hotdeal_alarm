@@ -1,0 +1,13 @@
+name: "Hotdeal Monitor Add-on"
+url: "https://github.com/benison8/hotdeal_alarm" # 사용자의 실제 저장소 주소로 변경
+maintainer: "benison8/hotdeal_alarm"
+image: "dbswnschl/hotdeal_alarm-{arch}" # Docker 이미지 이름 (사용자명/애드온 이름)
+panel_icon: "mdi:fire"
+slug: "hotdeal_alarm"
+# 애드온의 설정 옵션 정의
+options:
+  interval_minutes: 10
+  target_url: "https://example.com/hotdeal_board"
+schema:
+  interval_minutes: int
+  target_url: str
