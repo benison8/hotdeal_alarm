@@ -24,4 +24,4 @@ jobs:
           push: true
           tags: |
             tmuu/hotdeal_alarm:latest
-            tmuu/hotdeal_alarm:1.0.8
+            tmuu/hotdeal_alarm:1.0.9

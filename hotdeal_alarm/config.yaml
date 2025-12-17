@@ -1,6 +1,6 @@
 name: "Hotdeal Monitor"
 slug: "hotdeal_alarm"
-version: "1.0.8"
+version: "1.0.9"
 description: "핫딜 알림 서비스입니다."
 arch:
   - amd64
