@@ -1,4 +1,4 @@
-FROM homeassistant/base-python:3.11
+FROM ghcr.io/home-assistant/base-python:3.11
 
 WORKDIR /app
 
