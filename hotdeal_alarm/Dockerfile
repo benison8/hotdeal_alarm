@@ -1,13 +1,21 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache python3 py3-pip jq
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+
+# Install python + pip
+RUN apk add --no-cache python3 py3-pip
 
 WORKDIR /app
-COPY app/requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir -r /app/requirements.txt
 
+# requirements.txt is in add-on root (COPY requirements.txt . 형태)
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Your app code
 COPY app/ /app/
+
+# Entrypoint
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
