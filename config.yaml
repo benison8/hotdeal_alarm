@@ -1,0 +1,82 @@
+name: Hotdeal Alarm
+slug: hotdeal_alarm
+version: "1.0.0"
+description: "Hotdeal watcher (ppomppu/clien/ruriweb/quasarzone) + Telegram/Discord/WebPush"
+arch: [amd64, aarch64, armv7]
+startup: services
+boot: auto
+init: false  # s6-overlay v3 [page:0][page:1]
+
+options:
+  interval_min: 1
+
+  use_site_ppomppu: false
+  use_board_ppomppu_ppomppu: false
+  use_board_ppomppu_ppomppu4: false
+  use_board_ppomppu_ppomppu8: false
+  use_board_ppomppu_money: false
+
+  use_site_clien: false
+  use_board_clien_allsell: false
+  use_board_clien_jirum: false
+
+  use_site_ruriweb: false
+  use_board_ruriweb_1020: false
+  use_board_ruriweb_600004: false
+
+  use_site_quasarzone: false
+  use_board_quasarzone_qb_saleinfo: false
+
+  use_hotdeal_alarm: true
+  use_hotdeal_keyword_alarm: false
+  use_hotdeal_keyword_alarm_dist: false
+  hotdeal_alarm_keyword: ""
+  notify_mode: "always"     # 원본에 있으나 여기서는 always만 구현(확장 가능) [file:64]
+  alarm_message_template: "`{title}`\n{url}\n{mall_url}"
+
+  telegram_enable: false
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
+  discord_enable: false
+  discord_webhook_url: ""
+
+  web_push_enable: false
+  web_push_vapid_subject: "mailto:admin@example.com"
+
+schema:
+  interval_min: int(1,)
+
+  use_site_ppomppu: bool
+  use_board_ppomppu_ppomppu: bool
+  use_board_ppomppu_ppomppu4: bool
+  use_board_ppomppu_ppomppu8: bool
+  use_board_ppomppu_money: bool
+
+  use_site_clien: bool
+  use_board_clien_allsell: bool
+  use_board_clien_jirum: bool
+
+  use_site_ruriweb: bool
+  use_board_ruriweb_1020: bool
+  use_board_ruriweb_600004: bool
+
+  use_site_quasarzone: bool
+  use_board_quasarzone_qb_saleinfo: bool
+
+  use_hotdeal_alarm: bool
+  use_hotdeal_keyword_alarm: bool
+  use_hotdeal_keyword_alarm_dist: bool
+  hotdeal_alarm_keyword: str
+  notify_mode: list(always)
+  alarm_message_template: str
+
+  telegram_enable: bool
+  telegram_bot_token: password
+  telegram_chat_id: str?
+
+  discord_enable: bool
+  discord_webhook_url: password
+
+  web_push_enable: bool
+  web_push_vapid_subject: str
