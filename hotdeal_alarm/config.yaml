@@ -4,7 +4,10 @@ version: "1.0.0"
 description: Hot deal monitoring with notifications
 arch:
   - amd64
-  - arm64
+  - aarch64
+  - armv7
+  - armhf
+
 
 options:
   interval: 300
