@@ -2,7 +2,6 @@ import json, os, re, time, html, traceback
 from typing import Dict, List
 import requests
 import cloudscraper
-from pywebpush import webpush
 
 DATA_DIR = "/data"
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
@@ -69,7 +68,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     for board in boards:
       if not cfg.get(f"use_board_ppomppu_{board}"):
         continue
-      text = sess.get(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}", timeout=20).text
+      text = scraper.get(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}", timeout=20).text
       for m in re.finditer(regex, text, re.MULTILINE):
         out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
@@ -164,29 +163,33 @@ def send_discord(cfg: Dict, msg: str):
     return
   requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
 
-def web_push_send_all(cfg: Dict, data: Dict):
-  # 원본은 /data/web_push 아래에 vapid key를 생성/저장하고 subscription 리스트를 setting에 저장 [file:64]
-  # 애드온에서는 /data/web_push/*, /data/web_push_subscriptions.json 로 단순화
-  if not cfg.get("web_push_enable"):
-    return
-  sub_path = os.path.join(DATA_DIR, "web_push_subscriptions.json")
-  key_priv = os.path.join(DATA_DIR, "web_push", "private_key.pem")
-  if not (os.path.exists(sub_path) and os.path.exists(key_priv)):
-    return
+def send_homeassistant_notify(cfg: Dict, msg: str):
+    if not cfg.get("ha_notify_enable"):
+        return
 
-  with open(sub_path, "r", encoding="utf-8") as f:
-    subs = json.load(f) or []
+    service = (cfg.get("ha_notify_service") or "").strip()
+    if not service.startswith("notify."):
+        return
 
-  for info in subs:
+    token = os.getenv("SUPERVISOR_TOKEN")
+    if not token:
+        return
+
+    # "notify.mobile_app_xxx" -> domain="notify", service="mobile_app_xxx"
+    domain, svc = service.split(".", 1)
+
+    url = f"http://supervisor/core/api/services/{domain}/{svc}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    payload = {"message": msg}
+
     try:
-      webpush(
-        subscription_info=info,
-        data=json.dumps(data, ensure_ascii=False),
-        vapid_private_key=key_priv,
-        vapid_claims={"sub": cfg.get("web_push_vapid_subject", "mailto:admin@example.com")}
-      )
+        requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
     except Exception:
-      continue
+        # 알림 실패가 크롤링을 막지 않게 조용히 무시(필요하면 로그로 변경)
+        return
 
 def should_send(cfg: Dict, title: str):
   keywords = [k.strip() for k in (cfg.get("hotdeal_alarm_keyword") or "").split(",") if k.strip()]
@@ -232,7 +235,7 @@ def main():
                                title, site, board, full_url, mall_url)
           send_telegram(cfg, msg)
           send_discord(cfg, msg)
-          web_push_send_all(cfg, {"message": title, "url": mall_url if mall_url else full_url})
+          send_homeassistant_notify(cfg, msg)
 
         if send_dist:
           msg = format_message(cfg.get("alarm_message_template","{title}\n{url}\n{mall_url}"),
@@ -240,7 +243,7 @@ def main():
           # dist 채널을 따로 두고 싶으면 config를 분리하면 됨(원본은 message_id를 다르게 사용) [file:64]
           send_telegram(cfg, msg)
           send_discord(cfg, msg)
-          web_push_send_all(cfg, {"message": title, "url": mall_url if mall_url else full_url})
+          send_homeassistant_notify(cfg, msg)
 
         state["seen"][key] = True
         save_state(state)

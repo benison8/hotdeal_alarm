@@ -1,11 +1,12 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.0.1"
+version: "1.0.2"
 description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/웹푸시)"
 arch: [amd64, aarch64, armv7]
 startup: services
 boot: auto
 init: false
+homeassistant_api: true
 
 options:
   interval_min: 1
@@ -49,9 +50,10 @@ options:
   discord_enable: false
   discord_webhook_url: ""
 
-  # 웹푸시(키/구독은 /data에 별도 저장하는 방식)
-  web_push_enable: false
-  web_push_vapid_subject: "mailto:admin@example.com"
+  # HA푸시
+  ha_notify_enable: false
+  ha_notify_service: "notify.notify"   # 예: notify.mobile_app_내폰 / notify.notify / notify.가족 등
+
 
 schema:
   interval_min: int(1,)
@@ -90,5 +92,6 @@ schema:
   discord_enable: bool
   discord_webhook_url: password
 
-  web_push_enable: bool
-  web_push_vapid_subject: str
+  ha_notify_enable: bool
+  ha_notify_service: str
+

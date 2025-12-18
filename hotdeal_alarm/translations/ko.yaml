@@ -73,9 +73,9 @@ configuration:
   discord_webhook_url:
     name: "디스코드 Webhook URL"
 
-  web_push_enable:
-    name: "웹푸시 사용"
-    description: "브라우저 웹푸시(구독/키)는 /data에 저장되는 구조입니다."
-  web_push_vapid_subject:
-    name: "웹푸시 VAPID Subject"
-    description: "보통 mailto:이메일 형태를 사용합니다."
+  ha_notify_enable:
+    name: "홈어시스턴트 알림 사용"
+    description: "Home Assistant의 notify 서비스로 푸시를 보냅니다(모바일 앱/알림 그룹 등)."
+  ha_notify_service:
+    name: "알림 서비스 이름"
+    description: "예: notify.mobile_app_내폰, notify.notify, notify.가족"
