@@ -1,0 +1,23 @@
+name: Hotdeal Alarm
+slug: hotdeal_alarm
+description: Hot deal monitoring with Telegram or HA notify
+version: "1.0.0"
+startup: application
+boot: auto
+arch:
+  - amd64
+  - arm64
+
+options:
+  interval: 300
+  url: ""
+  notify_type: "ha"
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
+schema:
+  interval: int
+  url: str
+  notify_type: list(ha|telegram|both)
+  telegram_bot_token: str?
+  telegram_chat_id: str?

@@ -1,19 +1,19 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
-if [ -f /usr/bin/bashio ]; then
-    INTERVAL=$(/usr/bin/bashio::config 'interval_minutes')
-    URL=$(/usr/bin/bashio::config 'target_url')
-else
-    INTERVAL=10
-    URL="https://www.ppomppu.co.kr/zboard/zboard.php?id=ppomppu"
-fi
+CONFIG_PATH=/data/options.json
 
-echo "--- Hotdeal Monitor Starting ---"
-echo "Interval: $INTERVAL min"
-echo "URL: $URL"
+INTERVAL=$(jq -r '.interval' $CONFIG_PATH)
+URL=$(jq -r '.url' $CONFIG_PATH)
+NOTIFY_TYPE=$(jq -r '.notify_type' $CONFIG_PATH)
+TG_TOKEN=$(jq -r '.telegram_bot_token' $CONFIG_PATH)
+TG_CHAT_ID=$(jq -r '.telegram_chat_id' $CONFIG_PATH)
 
-exec python3 -u /app/hotdeal_monitor.py \
+echo "Starting hotdeal alarm..."
+
+exec python3 -u /app/main.py \
   --interval "$INTERVAL" \
-  --url "$URL"
-
+  --url "$URL" \
+  --notify-type "$NOTIFY_TYPE" \
+  --tg-token "$TG_TOKEN" \
+  --tg-chat-id "$TG_CHAT_ID"
