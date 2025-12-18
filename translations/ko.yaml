@@ -1,0 +1,81 @@
+configuration:
+  interval_min:
+    name: "점검 주기(분)"
+    description: "몇 분마다 게시판을 확인할지 설정합니다. 너무 짧게 하면 차단/부하 위험이 있습니다."
+
+  use_site_ppomppu:
+    name: "뽐뿌(사이트) 사용"
+    description: "뽐뿌 사이트에서 선택한 게시판을 모니터링합니다."
+  use_board_ppomppu_ppomppu:
+    name: "뽐뿌 → 뽐뿌게시판"
+  use_board_ppomppu_ppomppu4:
+    name: "뽐뿌 → 해외뽐뿌"
+  use_board_ppomppu_ppomppu8:
+    name: "뽐뿌 → 알리뽐뿌"
+  use_board_ppomppu_money:
+    name: "뽐뿌 → 재태크포럼"
+
+  use_site_clien:
+    name: "클리앙(사이트) 사용"
+    description: "클리앙 사이트에서 선택한 게시판을 모니터링합니다."
+  use_board_clien_allsell:
+    name: "클리앙 → 사고팔고"
+  use_board_clien_jirum:
+    name: "클리앙 → 알뜰구매"
+
+  use_site_ruriweb:
+    name: "루리웹(사이트) 사용"
+    description: "루리웹 사이트에서 선택한 게시판을 모니터링합니다."
+  use_board_ruriweb_1020:
+    name: "루리웹 → 핫딜/예판 유저"
+  use_board_ruriweb_600004:
+    name: "루리웹 → 핫딜/예판 업체"
+
+  use_site_coolenjoy:
+    name: "쿨엔조이(사이트) 사용"
+    description: "쿨엔조이에서 선택한 게시판을 모니터링합니다(현재 main.py 구현 여부를 확인하세요)."
+  use_board_coolenjoy_jirum:
+    name: "쿨엔조이 → 지름/할인정보(지름)"
+    description: "쿨엔조이 게시판 키는 프로젝트 구현에 따라 다를 수 있습니다."
+
+  use_site_quasarzone:
+    name: "퀘이사존(사이트) 사용"
+    description: "퀘이사존 사이트에서 선택한 게시판을 모니터링합니다."
+  use_board_quasarzone_qb_saleinfo:
+    name: "퀘이사존 → 지름/할인정보"
+
+  use_hotdeal_alarm:
+    name: "전체 글 알림"
+    description: "선택한 게시판에서 새 글이 나오면 모두 알립니다."
+  use_hotdeal_keyword_alarm:
+    name: "키워드 포함 알림(메인)"
+    description: "제목에 키워드가 포함된 글만 알림을 보냅니다."
+  use_hotdeal_keyword_alarm_dist:
+    name: "키워드 포함 알림(추가)"
+    description: "키워드 포함 글에 대해 추가 알림을 보냅니다(채널 분리 구현 시 유용)."
+  hotdeal_alarm_keyword:
+    name: "키워드 목록"
+    description: "콤마(,)로 구분해서 입력하세요. 예: 아이폰,ssd,닌텐도"
+
+  alarm_message_template:
+    name: "알림 메시지 템플릿"
+    description: "사용 가능 변수: {title}, {site}, {board}, {url}, {mall_url}"
+
+  telegram_enable:
+    name: "텔레그램 알림 사용"
+  telegram_bot_token:
+    name: "텔레그램 봇 토큰"
+  telegram_chat_id:
+    name: "텔레그램 채팅 ID"
+
+  discord_enable:
+    name: "디스코드 알림 사용"
+  discord_webhook_url:
+    name: "디스코드 Webhook URL"
+
+  web_push_enable:
+    name: "웹푸시 사용"
+    description: "브라우저 웹푸시(구독/키)는 /data에 저장되는 구조입니다."
+  web_push_vapid_subject:
+    name: "웹푸시 VAPID Subject"
+    description: "보통 mailto:이메일 형태를 사용합니다."

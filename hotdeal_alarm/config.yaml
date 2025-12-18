@@ -1,15 +1,16 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.0.0"
-description: "Hotdeal watcher (ppomppu/clien/ruriweb/quasarzone) + Telegram/Discord/WebPush"
+version: "1.0.1"
+description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/웹푸시)"
 arch: [amd64, aarch64, armv7]
 startup: services
 boot: auto
-init: false  # s6-overlay v3 [page:0][page:1]
+init: false
 
 options:
   interval_min: 1
 
+  # 사이트/게시판 선택
   use_site_ppomppu: false
   use_board_ppomppu_ppomppu: false
   use_board_ppomppu_ppomppu4: false
@@ -24,23 +25,31 @@ options:
   use_board_ruriweb_1020: false
   use_board_ruriweb_600004: false
 
+  # (원본에는 있으나 현재 main.py에 스크랩 구현이 없으면 표시만 됨)
+  use_site_coolenjoy: false
+  use_board_coolenjoy_jirum: false
+
   use_site_quasarzone: false
   use_board_quasarzone_qb_saleinfo: false
 
+  # 알림 정책
   use_hotdeal_alarm: true
   use_hotdeal_keyword_alarm: false
   use_hotdeal_keyword_alarm_dist: false
   hotdeal_alarm_keyword: ""
-  notify_mode: "always"     # 원본에 있으나 여기서는 always만 구현(확장 가능) [file:64]
+
   alarm_message_template: "`{title}`\n{url}\n{mall_url}"
 
+  # 텔레그램
   telegram_enable: false
   telegram_bot_token: ""
   telegram_chat_id: ""
 
+  # 디스코드
   discord_enable: false
   discord_webhook_url: ""
 
+  # 웹푸시(키/구독은 /data에 별도 저장하는 방식)
   web_push_enable: false
   web_push_vapid_subject: "mailto:admin@example.com"
 
@@ -61,6 +70,9 @@ schema:
   use_board_ruriweb_1020: bool
   use_board_ruriweb_600004: bool
 
+  use_site_coolenjoy: bool
+  use_board_coolenjoy_jirum: bool
+
   use_site_quasarzone: bool
   use_board_quasarzone_qb_saleinfo: bool
 
@@ -68,7 +80,7 @@ schema:
   use_hotdeal_keyword_alarm: bool
   use_hotdeal_keyword_alarm_dist: bool
   hotdeal_alarm_keyword: str
-  notify_mode: list(always)
+
   alarm_message_template: str
 
   telegram_enable: bool
