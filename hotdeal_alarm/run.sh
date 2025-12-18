@@ -1,7 +1,6 @@
 #!/usr/bin/with-contenv bashio
 set -e
 
-CONFIG_PATH="/data/options.json"
-export CONFIG_PATH
+export CONFIG_PATH="/data/options.json"
+exec /opt/venv/bin/python /app/main.py
 
-exec python3 /app/main.py
