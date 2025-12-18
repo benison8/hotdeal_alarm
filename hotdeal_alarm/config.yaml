@@ -1,9 +1,7 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-description: Hot deal monitoring with Telegram or HA notify
 version: "1.0.0"
-startup: application
-boot: auto
+description: Hot deal monitoring with notifications
 arch:
   - amd64
   - arm64
