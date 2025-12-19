@@ -59,6 +59,13 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
 def scrape_board_items(cfg: Dict) -> List[Dict]:
   out = []
   sess = requests.session()
+  sess.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    "Connection": "close",
+})
+
   scraper = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "android", "desktop": False})
 
   # ppomppu
@@ -68,7 +75,15 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     for board in boards:
       if not cfg.get(f"use_board_ppomppu_{board}"):
         continue
-      text = sess.get(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}", timeout=20).text
+      url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
+      try:
+          text = sess.get(url, timeout=20).text
+      except requests.exceptions.RequestException:
+          time.sleep(1)
+          text = sess.get(url, timeout=20).text
+
+      print("PPOMPPU HTML length:", len(text))
+      print("PPOMPPU matches:", len(re.findall(regex, text, re.MULTILINE)))
       for m in re.finditer(regex, text, re.MULTILINE):
         out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
