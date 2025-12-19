@@ -68,7 +68,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     for board in boards:
       if not cfg.get(f"use_board_ppomppu_{board}"):
         continue
-      text = scraper.get(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}", timeout=20).text
+      text = sess.get(f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}", timeout=20).text
       for m in re.finditer(regex, text, re.MULTILINE):
         out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
