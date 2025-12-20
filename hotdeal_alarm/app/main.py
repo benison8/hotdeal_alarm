@@ -58,45 +58,59 @@ def save_state(state: Dict):
     os.replace(tmp, STATE_FILE)
 
 
+def make_requests_session() -> requests.Session:
+    s = requests.session()
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Connection": "close",
+    })
+    return s
+
+
 def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
-    # 상세 페이지는 요청 빈도가 높지 않으므로 단순 구현 유지
-    if use_cloudscraper:
-        sc = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "android", "desktop": False})
-        return sc.get(url, timeout=20).text
-    return requests.get(url, timeout=20).text
+    # 상세페이지(몰 링크 추출)는 실패해도 전체 루프를 죽이지 않게 방어
+    try:
+        if use_cloudscraper:
+            sc = cloudscraper.create_scraper(
+                browser={"browser": "chrome", "platform": "android", "desktop": False}
+            )
+            return sc.get(url, timeout=20).text
+
+        sess = make_requests_session()
+        try:
+            return sess.get(url, timeout=20).text
+        finally:
+            try:
+                sess.close()
+            except Exception:
+                pass
+
+    except (requests.exceptions.RequestException, OSError) as e:
+        print("WARN: http_get_text failed:", url, "err=", repr(e))
+        return ""
 
 
 def scrape_board_items(cfg: Dict) -> List[Dict]:
     out = []
 
-    def make_session():
-        s = requests.session()
-        s.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-            "Connection": "close",
-        })
-        return s
-
-    sess = make_session()
+    sess = make_requests_session()
 
     def safe_get_text(url: str) -> str:
         nonlocal sess
         try:
             return sess.get(url, timeout=20).text
         except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
-            # FD 고갈(Errno 24) / SSL / 연결 끊김 등일 때 세션 재생성 후 1회 재시도
             print("WARN: recreate session due to:", repr(e))
             try:
                 sess.close()
             except Exception:
                 pass
 
-            # 잠깐 쉬었다가 재시도(폭주 완화)
             time.sleep(1)
 
-            sess = make_session()
+            sess = make_requests_session()
             try:
                 return sess.get(url, timeout=20).text
             except Exception as e2:
@@ -115,6 +129,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
+
             print("PPOMPPU URL:", url)
             print("PPOMPPU HTML length:", len(text))
             print("PPOMPPU matches:", len(re.findall(ppomppu_regex, text, re.MULTILINE)))
@@ -135,11 +150,11 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 clien_regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
                 url = f"https://www.clien.net/service/group/{board}"
             else:
-                # 안정적인 보수적 패턴
                 clien_regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
                 url = f"https://www.clien.net/service/board/{board}"
 
             text = safe_get_text(url)
+
             print("CLIEN URL:", url)
             print("CLIEN HTML length:", len(text))
             print("CLIEN matches:", len(re.findall(clien_regex, text, re.MULTILINE)))
@@ -160,6 +175,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             ruriweb_regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
 
             text = safe_get_text(url)
+
             print("RURIWEB URL:", url)
             print("RURIWEB HTML length:", len(text))
             print("RURIWEB matches:", len(re.findall(ruriweb_regex, text, re.MULTILINE)))
@@ -177,7 +193,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             url = f"https://quasarzone.com/bbs/{board}"
             quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
 
-            # quasarzone는 cloudscraper 유지
             try:
                 text = scraper.get(url, timeout=20).text
             except Exception as e:
@@ -200,6 +215,11 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                     "url": "https://quasarzone.com" + u if u.startswith("/") else u
                 })
 
+    try:
+        sess.close()
+    except Exception:
+        pass
+
     return out
 
 
@@ -221,9 +241,13 @@ def scrape_mall_url(site: str, url: str) -> str:
 
     full = url if url.startswith("http") else (get_url_prefix(site) + url)
     text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
+    if not text:
+        return ""
+
     m = re.search(regex, text, re.MULTILINE)
     if not m:
         return ""
+
     return html.unescape(m.group("mall_url")).strip()
 
 
@@ -273,7 +297,6 @@ def send_homeassistant_notify(cfg: Dict, msg: str):
         return
 
     domain, svc = service.split(".", 1)
-
     url = f"http://supervisor/core/api/services/{domain}/{svc}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -305,8 +328,20 @@ def main():
         cfg = load_config()
         state = load_state()
 
+        print(
+            "CFG:",
+            "interval_min=", cfg.get("interval_min"),
+            "ppomppu=", cfg.get("use_site_ppomppu"),
+            "quasar=", cfg.get("use_site_quasarzone"),
+            "kw_main=", cfg.get("use_hotdeal_keyword_alarm"),
+            "kw=", cfg.get("hotdeal_alarm_keyword"),
+            "tg=", cfg.get("telegram_enable"),
+        )
+
         try:
             items = scrape_board_items(cfg)
+            print("ITEMS scraped:", len(items))
+
             for it in items:
                 site = it["site"]
                 board = it["board"]
@@ -321,14 +356,18 @@ def main():
                     # print(f"SKIP(seen): {site}/{board} | {title} | {full_url}")
                     continue
 
-                # mall_url 캐시/추출
-                mall_url = state["mall_cache"].get(key, "")
-                if not mall_url:
-                    mall_url = scrape_mall_url(site, raw_url)
-                    if mall_url:
-                        state["mall_cache"][key] = mall_url
-
+                # 먼저 키워드/정책 판단 (상세페이지 들어가기 전에!)
                 send_main, send_dist = should_send(cfg, title)
+                wants_detail = bool(send_main or send_dist)
+
+                mall_url = ""
+                if wants_detail:
+                    # mall_url 캐시/추출 (키워드 매칭된 것에 대해서만!)
+                    mall_url = state["mall_cache"].get(key, "")
+                    if not mall_url:
+                        mall_url = scrape_mall_url(site, raw_url)
+                        if mall_url:
+                            state["mall_cache"][key] = mall_url
 
                 if send_main:
                     msg = format_message(
@@ -350,6 +389,7 @@ def main():
                     send_discord(cfg, msg)
                     send_homeassistant_notify(cfg, msg)
 
+                # 알림을 보내든 안 보내든, 신규 글은 seen 처리(현재 정책 유지)
                 state["seen"][key] = True
                 save_state(state)
 

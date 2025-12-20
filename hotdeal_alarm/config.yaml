@@ -1,6 +1,6 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.0.7"
+version: "1.0.8"
 description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/웹푸시)"
 arch: [amd64, aarch64, armv7]
 startup: services
