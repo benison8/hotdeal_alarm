@@ -214,7 +214,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-            quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
+            quasar_regex = r'<p class=\"tit\">\s+<a href=\"(?P<url>.+)\"\s+class=.+>\s+.+\s+(?:<span class=\"ellipsis-with-reply-cnt\">)?(?P<title>.+?)(?:</span>)'
 
             text = safe_cloud_get_text(url)
             log("DEBUG: quasarzone list html length (cloudscraper):", len(text))

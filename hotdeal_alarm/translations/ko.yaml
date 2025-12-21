@@ -3,6 +3,14 @@ configuration:
     name: "점검 주기(분)"
     description: "몇 분마다 게시판을 확인할지 설정합니다. 너무 짧게 하면 차단/부하 위험이 있습니다."
 
+  state_keep_factor:
+    name: "확인 유지(배)"
+    description: "첫 페이지에서 수집된 글 개수의 몇 배까지 유지할지"
+
+  state_keep_min:
+    name: "최소 유지(글자수)"
+    description: "첫 페이지 글이 적은 경우를 대비한 최소 유지 개수"        
+
   use_site_ppomppu:
     name: "뽐뿌(사이트) 사용"
     description: "뽐뿌 사이트에서 선택한 게시판을 모니터링합니다."
