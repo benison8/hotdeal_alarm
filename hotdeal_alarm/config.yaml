@@ -1,453 +1,97 @@
-import json, os, re, time, html, traceback
-import sys
-from typing import Dict, List
-from collections import Counter
-
-import requests
-import cloudscraper
-
-DATA_DIR = "/data"
-STATE_FILE = os.path.join(DATA_DIR, "state.json")
-CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
-
-site_map = {
-    "ppomppu": "뽐뿌",
-    "clien": "클리앙",
-    "ruriweb": "루리웹",
-    "coolenjoy": "쿨엔조이",
-    "quasarzone": "퀘이사존",
-}
-board_map = {
-    "ppomppu": "뽐뿌게시판",
-    "ppomppu4": "해외뽐뿌",
-    "ppomppu8": "알리뽐뿌",
-    "money": "재태크포럼",
-    "allsell": "사고팔고",
-    "jirum": "알뜰구매",
-    "1020": "핫딜/예판 유저",
-    "600004": "핫딜/예판 업체",
-    "qb_saleinfo": "지름/할인정보",
-}
-
-
-def get_url_prefix(site_name: str) -> str:
-    if site_name == "ppomppu":
-        return "https://www.ppomppu.co.kr/zboard/"
-    if site_name == "clien":
-        return "https://www.clien.net"
-    return ""
-
-
-def load_config() -> Dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_state() -> Dict:
-    if not os.path.exists(STATE_FILE):
-        return {"seen": {}, "mall_cache": {}, "fail_count": {}}
-
-    with open(STATE_FILE, "r", encoding="utf-8") as f:
-        st = json.load(f)
-
-    if not isinstance(st, dict):
-        return {"seen": {}, "mall_cache": {}, "fail_count": {}}
-
-    st.setdefault("seen", {})
-    st.setdefault("mall_cache", {})
-    st.setdefault("fail_count", {})
-    return st
-
-
-def save_state(state: Dict):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, STATE_FILE)
-
-
-def make_requests_session() -> requests.Session:
-    s = requests.session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        "Connection": "close",
-    })
-    return s
-
-
-def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
-    try:
-        if use_cloudscraper:
-            sc = cloudscraper.create_scraper(
-                browser={"browser": "chrome", "platform": "android", "desktop": False}
-            )
-            return sc.get(url, timeout=20).text
-
-        sess = make_requests_session()
-        try:
-            return sess.get(url, timeout=20).text
-        finally:
-            try:
-                sess.close()
-            except Exception:
-                pass
-
-    except (requests.exceptions.RequestException, OSError) as e:
-        print("WARN: http_get_text failed:", url, "err=", repr(e))
-        return ""
-
+name: Hotdeal Alarm
+slug: hotdeal_alarm
+version: "1.1.2"
+description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/HA)"
+arch: [amd64, aarch64, armv7]
+startup: services
+boot: auto
+init: false
+homeassistant_api: true
+
+options:
+  interval_min: 1
+
+  # 사이트/게시판 선택
+  use_site_ppomppu: false
+  use_board_ppomppu_ppomppu: false
+  use_board_ppomppu_ppomppu4: false
+  use_board_ppomppu_ppomppu8: false
+  use_board_ppomppu_money: false
+
+  use_site_clien: false
+  use_board_clien_allsell: false
+  use_board_clien_jirum: false
+
+  use_site_ruriweb: false
+  use_board_ruriweb_1020: false
+  use_board_ruriweb_600004: false
+
+  # (원본에는 있으나 현재 main.py에 스크랩 구현이 없으면 표시만 됨)
+  use_site_coolenjoy: false
+  use_board_coolenjoy_jirum: false
+
+  use_site_quasarzone: false
+  use_board_quasarzone_qb_saleinfo: false
+
+  # 알림 정책
+  use_hotdeal_alarm: true
+  use_hotdeal_keyword_alarm: false
+  use_hotdeal_keyword_alarm_dist: false
+  hotdeal_alarm_keyword: ""
+
+  alarm_message_template: "`{title}`\n{url}\n{mall_url}"
+
+  # 텔레그램
+  telegram_enable: false
+  telegram_bot_token: ""
+  telegram_chat_id: ""
+
+  # 디스코드
+  discord_enable: false
+  discord_webhook_url: ""
+
+  # HA푸시
+  ha_notify_enable: false
+  ha_notify_service: "notify.notify"   # 예: notify.mobile_app_내폰 / notify.notify / notify.가족 등
+
+
+schema:
+  interval_min: int(1,)
+
+  use_site_ppomppu: bool
+  use_board_ppomppu_ppomppu: bool
+  use_board_ppomppu_ppomppu4: bool
+  use_board_ppomppu_ppomppu8: bool
+  use_board_ppomppu_money: bool
+
+  use_site_clien: bool
+  use_board_clien_allsell: bool
+  use_board_clien_jirum: bool
+
+  use_site_ruriweb: bool
+  use_board_ruriweb_1020: bool
+  use_board_ruriweb_600004: bool
+
+  use_site_coolenjoy: bool
+  use_board_coolenjoy_jirum: bool
+
+  use_site_quasarzone: bool
+  use_board_quasarzone_qb_saleinfo: bool
+
+  use_hotdeal_alarm: bool
+  use_hotdeal_keyword_alarm: bool
+  use_hotdeal_keyword_alarm_dist: bool
+  hotdeal_alarm_keyword: str
+
+  alarm_message_template: str
+
+  telegram_enable: bool
+  telegram_bot_token: password
+  telegram_chat_id: str?
+
+  discord_enable: bool
+  discord_webhook_url: password
+
+  ha_notify_enable: bool
+  ha_notify_service: str
 
-def scrape_board_items(cfg: Dict) -> List[Dict]:
-    out: List[Dict] = []
-
-    sess = make_requests_session()
-
-    def safe_get_text(url: str) -> str:
-        nonlocal sess
-        try:
-            return sess.get(url, timeout=20).text
-        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
-            print("WARN: recreate session due to:", repr(e))
-            try:
-                sess.close()
-            except Exception:
-                pass
-
-            time.sleep(1)
-
-            sess = make_requests_session()
-            try:
-                return sess.get(url, timeout=20).text
-            except Exception as e2:
-                print("WARN: retry failed:", repr(e2))
-                return ""
-
-    scraper = cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "android", "desktop": False}
-    )
-
-    def safe_cloud_get_text(url: str) -> str:
-        nonlocal scraper
-        try:
-            return scraper.get(url, timeout=20).text
-        except Exception as e:
-            print("WARN: cloudscraper failed, recreate scraper:", repr(e))
-            time.sleep(1)
-            try:
-                scraper = cloudscraper.create_scraper(
-                    browser={"browser": "chrome", "platform": "android", "desktop": False}
-                )
-                return scraper.get(url, timeout=20).text
-            except Exception as e2:
-                print("WARN: cloudscraper retry failed:", repr(e2))
-                return ""
-
-    # ppomppu
-    if cfg.get("use_site_ppomppu"):
-        boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+?)<'
-        for board in boards:
-            if not cfg.get(f"use_board_ppomppu_{board}"):
-                continue
-
-            url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
-            text = safe_get_text(url)
-            if not text:
-                continue
-
-            for m in re.finditer(ppomppu_regex, text, re.MULTILINE):
-                out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
-
-    # clien
-    if cfg.get("use_site_clien"):
-        for board in ["allsell", "jirum"]:
-            if not cfg.get(f"use_board_clien_{board}"):
-                continue
-
-            if board == "allsell":
-                clien_regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
-                url = f"https://www.clien.net/service/group/{board}"
-            else:
-                clien_regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
-                url = f"https://www.clien.net/service/board/{board}"
-
-            text = safe_get_text(url)
-            if not text:
-                continue
-
-            for m in re.finditer(clien_regex, text, re.MULTILINE):
-                out.append({"site": "clien", "board": board, "title": m.group("title"), "url": m.group("url")})
-
-    # ruriweb
-    if cfg.get("use_site_ruriweb"):
-        for board in ["1020", "600004"]:
-            if not cfg.get(f"use_board_ruriweb_{board}"):
-                continue
-
-            url = f"https://bbs.ruliweb.com/market/board/{board}"
-            ruriweb_regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
-
-            text = safe_get_text(url)
-            if not text:
-                continue
-
-            for m in re.finditer(ruriweb_regex, text, re.MULTILINE):
-                out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
-
-    # quasarzone (디버그 로그 추가)
-    if cfg.get("use_site_quasarzone"):
-        board = "qb_saleinfo"
-        if cfg.get("use_board_quasarzone_qb_saleinfo"):
-            url = f"https://quasarzone.com/bbs/{board}"
-            quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
-
-            text = safe_cloud_get_text(url)
-            print("DEBUG: quasarzone list html length (cloudscraper):", len(text))
-
-            if text:
-                try:
-                    matches = list(re.finditer(quasar_regex, text, re.MULTILINE))
-                    print("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
-                except Exception as e:
-                    print("WARN: quasarzone regex error:", repr(e))
-                    matches = []
-
-                for m in matches:
-                    u = m.group("url")
-                    out.append({
-                        "site": "quasarzone",
-                        "board": board,
-                        "title": m.group("title"),
-                        "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                    })
-
-            if not text or (text and "matches" in locals() and len(matches) == 0):
-                print("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
-                text2 = http_get_text(url, use_cloudscraper=True)
-                print("DEBUG: quasarzone list html length (fallback):", len(text2))
-
-                if text2:
-                    matches2 = list(re.finditer(quasar_regex, text2, re.MULTILINE))
-                    print("DEBUG: quasarzone regex matches (fallback):", len(matches2))
-                    for m in matches2:
-                        u = m.group("url")
-                        out.append({
-                            "site": "quasarzone",
-                            "board": board,
-                            "title": m.group("title"),
-                            "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                        })
-
-    try:
-        sess.close()
-    except Exception:
-        pass
-
-    return out
-
-
-def scrape_mall_url(site: str, url: str) -> str:
-    regex = None
-    if site == "ppomppu":
-        regex = r'div class=wordfix>링크:\s+(?P<mall_url>[^<]+)'
-    elif site == "clien":
-        regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
-    elif site == "ruriweb":
-        regex = r'원본출처.+?(?P<mall_url>https?://[^\s\"<]+)'
-    elif site == "coolenjoy":
-        regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
-    elif site == "quasarzone":
-        regex = r'링크\s+(?P<mall_url>https?://[^\s\"<]+)'
-
-    if not regex:
-        return ""
-
-    full = url if url.startswith("http") else (get_url_prefix(site) + url)
-    text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
-    if not text:
-        return ""
-
-    m = re.search(regex, text, re.MULTILINE)
-    if not m:
-        return ""
-    return html.unescape(m.group("mall_url")).strip()
-
-
-def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
-    return (template
-            .replace("{title}", title)
-            .replace("{site}", site_map.get(site, site))
-            .replace("{board}", board_map.get(board, board))
-            .replace("{url}", url)
-            .replace("{mall_url}", mall_url or "")
-            )
-
-
-def send_telegram(cfg: Dict, msg: str) -> bool:
-    if not cfg.get("telegram_enable"):
-        return False
-    token = cfg.get("telegram_bot_token")
-    chat_id = cfg.get("telegram_chat_id")
-    if not token or not chat_id:
-        return False
-    try:
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": msg},
-            timeout=20
-        ).raise_for_status()
-        return True
-    except Exception as e:
-        print("WARN: telegram send failed:", repr(e))
-        return False
-
-
-def send_discord(cfg: Dict, msg: str) -> bool:
-    if not cfg.get("discord_enable"):
-        return False
-    webhook = cfg.get("discord_webhook_url")
-    if not webhook:
-        return False
-    try:
-        requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
-        return True
-    except Exception as e:
-        print("WARN: discord send failed:", repr(e))
-        return False
-
-
-def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
-    if not cfg.get("ha_notify_enable"):
-        return False
-
-    service = (cfg.get("ha_notify_service") or "").strip()
-    if not service.startswith("notify."):
-        return False
-
-    token = os.getenv("SUPERVISOR_TOKEN")
-    if not token:
-        return False
-
-    domain, svc = service.split(".", 1)
-    url = f"http://supervisor/core/api/services/{domain}/{svc}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-    payload = {"message": msg}
-
-    try:
-        requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
-        return True
-    except Exception as e:
-        print("WARN: ha notify failed:", repr(e))
-        return False
-
-
-def should_send(cfg: Dict, title: str):
-    keywords = [k.strip() for k in (cfg.get("hotdeal_alarm_keyword") or "").split(",") if k.strip()]
-    send_all = bool(cfg.get("use_hotdeal_alarm"))
-    send_kw = False
-    send_kw_dist = False
-    if cfg.get("use_hotdeal_keyword_alarm") and keywords:
-        send_kw = any(k.lower() in title.lower() for k in keywords)
-    if cfg.get("use_hotdeal_keyword_alarm_dist") and keywords:
-        send_kw_dist = any(k.lower() in title.lower() for k in keywords)
-    return send_all or send_kw, send_kw_dist
-
-
-def main():
-    os.makedirs(DATA_DIR, exist_ok=True)
-    while True:
-        cfg = load_config()
-        state = load_state()
-
-        # 재시도 제한(기본 10)
-        max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
-
-        try:
-            items = scrape_board_items(cfg)
-
-            # 전체 개수 + 사이트/게시판별 개수(핵심 디버그)
-            print("ITEMS scraped:", len(items))
-            c = Counter((it.get("site"), it.get("board")) for it in items)
-            print("ITEMS by site/board:", dict(c))
-
-            for it in items:
-                site = it["site"]
-                board = it["board"]
-                title = (it["title"] or "").strip()
-                raw_url = it["url"]
-
-                full_url = raw_url if raw_url.startswith("http") else (get_url_prefix(site) + raw_url)
-                key = f"{site}:{board}:{full_url}"
-
-                if state["seen"].get(key):
-                    continue
-
-                send_main, send_dist = should_send(cfg, title)
-                wants_detail = bool(send_main or send_dist)
-
-                mall_url = ""
-                if wants_detail:
-                    mall_url = state["mall_cache"].get(key, "")
-                    if not mall_url:
-                        mall_url = scrape_mall_url(site, raw_url)
-                        if mall_url:
-                            state["mall_cache"][key] = mall_url
-
-                if not (send_main or send_dist):
-                    continue
-
-                sent_any = False
-                msg = format_message(
-                    cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
-                    title, site, board, full_url, mall_url
-                )
-
-                if send_main:
-                    print(f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
-                    sent_any = (send_telegram(cfg, msg) or sent_any)
-                    sent_any = (send_discord(cfg, msg) or sent_any)
-                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
-
-                if send_dist:
-                    print(f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
-                    sent_any = (send_telegram(cfg, msg) or sent_any)
-                    sent_any = (send_discord(cfg, msg) or sent_any)
-                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
-
-                if sent_any:
-                    state["seen"][key] = True
-                    if key in state["fail_count"]:
-                        del state["fail_count"][key]
-                    save_state(state)
-                else:
-                    cur = int(state["fail_count"].get(key, 0)) + 1
-                    state["fail_count"][key] = cur
-
-                    if max_fail > 0 and cur >= max_fail:
-                        print(f"WARN: send failed {cur} times; give up and mark seen: {key}")
-                        state["seen"][key] = True
-                        del state["fail_count"][key]
-                    else:
-                        print(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
-
-                    save_state(state)
-
-        except Exception as e:
-            print("ERROR:", e)
-            print(traceback.format_exc())
-            if "No file descriptors available" in repr(e):
-                print("FATAL: No file descriptors available, exiting to trigger restart...")
-                sys.exit(1)
-
-        interval = int(cfg.get("interval_min", 1))
-        time.sleep(max(60, interval * 60))
-
-
-if __name__ == "__main__":
-    main()

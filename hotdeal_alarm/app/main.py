@@ -1,15 +1,14 @@
 import json, os, re, time, html, traceback
 import sys
 from typing import Dict, List
+from collections import Counter
 
 import requests
 import cloudscraper
 
-
 DATA_DIR = "/data"
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
-
 
 site_map = {
     "ppomppu": "뽐뿌",
@@ -47,10 +46,13 @@ def load_config() -> Dict:
 def load_state() -> Dict:
     if not os.path.exists(STATE_FILE):
         return {"seen": {}, "mall_cache": {}, "fail_count": {}}
+
     with open(STATE_FILE, "r", encoding="utf-8") as f:
         st = json.load(f)
+
     if not isinstance(st, dict):
         return {"seen": {}, "mall_cache": {}, "fail_count": {}}
+
     st.setdefault("seen", {})
     st.setdefault("mall_cache", {})
     st.setdefault("fail_count", {})
@@ -195,7 +197,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in re.finditer(ruriweb_regex, text, re.MULTILINE):
                 out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # quasarzone
+    # quasarzone (디버그 로그 추가)
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
@@ -203,14 +205,17 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
 
             text = safe_cloud_get_text(url)
-            if not text:
-                print("WARN: quasarzone empty html (cloudscraper), fallback to http_get_text(cloudscraper=True)")
-                text = http_get_text(url, use_cloudscraper=True)
+            print("DEBUG: quasarzone list html length (cloudscraper):", len(text))
 
-            if not text:
-                print("WARN: quasarzone still empty html, skip this site this cycle")
-            else:
-                for m in re.finditer(quasar_regex, text, re.MULTILINE):
+            if text:
+                try:
+                    matches = list(re.finditer(quasar_regex, text, re.MULTILINE))
+                    print("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
+                except Exception as e:
+                    print("WARN: quasarzone regex error:", repr(e))
+                    matches = []
+
+                for m in matches:
                     u = m.group("url")
                     out.append({
                         "site": "quasarzone",
@@ -218,6 +223,23 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         "title": m.group("title"),
                         "url": "https://quasarzone.com" + u if u.startswith("/") else u
                     })
+
+            if not text or (text and "matches" in locals() and len(matches) == 0):
+                print("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
+                text2 = http_get_text(url, use_cloudscraper=True)
+                print("DEBUG: quasarzone list html length (fallback):", len(text2))
+
+                if text2:
+                    matches2 = list(re.finditer(quasar_regex, text2, re.MULTILINE))
+                    print("DEBUG: quasarzone regex matches (fallback):", len(matches2))
+                    for m in matches2:
+                        u = m.group("url")
+                        out.append({
+                            "site": "quasarzone",
+                            "board": board,
+                            "title": m.group("title"),
+                            "url": "https://quasarzone.com" + u if u.startswith("/") else u
+                        })
 
     try:
         sess.close()
@@ -256,12 +278,12 @@ def scrape_mall_url(site: str, url: str) -> str:
 
 def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
     return (template
-        .replace("{title}", title)
-        .replace("{site}", site_map.get(site, site))
-        .replace("{board}", board_map.get(board, board))
-        .replace("{url}", url)
-        .replace("{mall_url}", mall_url or "")
-    )
+            .replace("{title}", title)
+            .replace("{site}", site_map.get(site, site))
+            .replace("{board}", board_map.get(board, board))
+            .replace("{url}", url)
+            .replace("{mall_url}", mall_url or "")
+            )
 
 
 def send_telegram(cfg: Dict, msg: str) -> bool:
@@ -343,12 +365,16 @@ def main():
         cfg = load_config()
         state = load_state()
 
-        # 0이면 최대 10회 재시도(사용자 요구: 반드시 알림)로 해석
+        # 재시도 제한(기본 10)
         max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
 
         try:
             items = scrape_board_items(cfg)
+
+            # 전체 개수 + 사이트/게시판별 개수(핵심 디버그)
             print("ITEMS scraped:", len(items))
+            c = Counter((it.get("site"), it.get("board")) for it in items)
+            print("ITEMS by site/board:", dict(c))
 
             for it in items:
                 site = it["site"]
@@ -373,7 +399,6 @@ def main():
                         if mall_url:
                             state["mall_cache"][key] = mall_url
 
-                # 키워드/전체알림 조건이 아니라면 seen 처리하지 않고 그냥 스킵
                 if not (send_main or send_dist):
                     continue
 
@@ -396,22 +421,17 @@ def main():
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
                 if sent_any:
-                    # 성공했으면 중복방지 처리 + 실패카운트 정리
                     state["seen"][key] = True
                     if key in state["fail_count"]:
                         del state["fail_count"][key]
                     save_state(state)
                 else:
-                    # 실패했으면 카운트 증가
-                    cur = int(state["fail_count"].get(key, 0))
-                    cur += 1
+                    cur = int(state["fail_count"].get(key, 0)) + 1
                     state["fail_count"][key] = cur
 
                     if max_fail > 0 and cur >= max_fail:
-                        # 제한 도달: 더 이상 재시도하지 않고 seen 처리(스팸/무한루프 방지)
                         print(f"WARN: send failed {cur} times; give up and mark seen: {key}")
                         state["seen"][key] = True
-                        # 실패카운트도 정리(선택)
                         del state["fail_count"][key]
                     else:
                         print(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
