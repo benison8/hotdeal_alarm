@@ -343,7 +343,7 @@ def main():
         cfg = load_config()
         state = load_state()
 
-        # 0이면 무한 재시도(사용자 요구: 반드시 알림)로 해석
+        # 0이면 최대 10회 재시도(사용자 요구: 반드시 알림)로 해석
         max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
 
         try:
