@@ -44,6 +44,12 @@ def get_url_prefix(site_name: str) -> str:
         return "https://www.ppomppu.co.kr/zboard/"
     if site_name == "clien":
         return "https://www.clien.net"
+    if site_name == "coolenjoy":
+        return "https://coolenjoy.net"
+    if site_name == "quasarzone":
+        return "https://quasarzone.com"
+    if site_name == "ruriweb":
+        return "https://bbs.ruliweb.com"
     return ""
 
 
@@ -110,12 +116,6 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
 
 
 def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
-    """
-    첫 페이지 기준으로만 state를 유지하기 위한 정리 함수.
-    - keep_keys: 이번 사이클에서 수집된 items로부터 만든 key 목록
-    - keep_factor: len(keep_keys) * keep_factor 만큼까지 보관
-    - keep_min: 최소 보관 개수
-    """
     if not keep_keys:
         return
 
@@ -198,7 +198,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     # ppomppu
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+?)<'
+        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)</span></a>'
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
@@ -209,11 +209,69 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in re.finditer(ppomppu_regex, text, re.MULTILINE):
                 out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
+    # clien
+    if cfg.get("use_site_clien"):
+        for board in ["allsell", "jirum"]:
+            if not cfg.get(f"use_board_clien_{board}"):
+                continue
+
+            if board == "allsell":
+                regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
+                url = f"https://www.clien.net/service/group/{board}"
+            else:
+                regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
+                url = f"https://www.clien.net/service/board/{board}"
+
+            text = safe_get_text(url)
+            if not text:
+                continue
+            for m in re.finditer(regex, text, re.MULTILINE):
+                out.append({"site": "clien", "board": board, "title": m.group("title"), "url": m.group("url")})
+
+    # ruriweb
+    if cfg.get("use_site_ruriweb"):
+        for board in ["1020", "600004"]:
+            if not cfg.get(f"use_board_ruriweb_{board}"):
+                continue
+            url = f"https://bbs.ruliweb.com/market/board/{board}"
+            text = safe_get_text(url)
+            if not text:
+                continue
+            regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
+            for m in re.finditer(regex, text, re.MULTILINE):
+                out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
+
+    # coolenjoy (추가)
+    if cfg.get("use_site_coolenjoy"):
+        boards = ["jirum"]
+        for board in boards:
+            if not cfg.get(f"use_board_coolenjoy_{board}"):
+                continue
+
+            # 정규식은 사용자 제공 그대로 유지
+            regex = r'<td class=\"td_subject\">\s+<a href=\"(?P<url>.+)\">\s+(?:<font color=.+?>)?(?P<title>.+?)(?:</font>)?\s+<span class=\"sound_only\"'
+            url = f"https://coolenjoy.net/bbs/{board}"
+
+            text = safe_get_text(url)
+            if not text:
+                continue
+
+            for m in re.finditer(regex, text, re.MULTILINE):
+                u = m.group("url")
+                out.append({
+                    "site": "coolenjoy",
+                    "board": board,
+                    "title": m.group("title"),
+                    "url": "https://coolenjoy.net" + u if u.startswith("/") else u
+                })
+
     # quasarzone
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
+
+            # 정규식은 사용자 제공 그대로 유지
             quasar_regex = r'<p class=\"tit\">\s+<a href=\"(?P<url>.+)\"\s+class=.+>\s+.+\s+(?:<span class=\"ellipsis-with-reply-cnt\">)?(?P<title>.+?)(?:</span>)'
 
             text = safe_cloud_get_text(url)
@@ -274,6 +332,12 @@ def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
         regex = r'div class=wordfix>링크:\s+(?P<mall_url>[^<]+)'
+    elif site == "clien":
+        regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
+    elif site == "ruriweb":
+        regex = r'원본출처.+?(?P<mall_url>https?://[^\s\"<]+)'
+    elif site == "coolenjoy":
+        regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
     elif site == "quasarzone":
         regex = r'링크\s+(?P<mall_url>https?://[^\s\"<]+)'
 
@@ -288,6 +352,7 @@ def scrape_mall_url(site: str, url: str) -> str:
     m = re.search(regex, text, re.MULTILINE)
     if not m:
         return ""
+
     return html.unescape(m.group("mall_url")).strip()
 
 
@@ -388,15 +453,12 @@ def main():
         state = load_state()
 
         max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
-
-        # UI에서 조절되는 state 유지 정책(기본: 1.5배, 최소 50개)
         keep_factor = float(cfg.get("state_keep_factor", 1.5) or 1.5)
         keep_min = int(cfg.get("state_keep_min", 50) or 50)
 
         try:
             items = scrape_board_items(cfg)
 
-            # 첫 페이지 key 목록 생성(이 목록을 기준으로 state를 정리)
             keep_keys: List[str] = []
             for it in items:
                 site = it["site"]
@@ -405,7 +467,6 @@ def main():
                 full_url = raw_url if raw_url.startswith("http") else (get_url_prefix(site) + raw_url)
                 keep_keys.append(f"{site}:{board}:{full_url}")
 
-            # state를 첫 페이지 기준으로 정리(메모리/파일 무한 증가 방지)
             trim_state_to_firstpage(state, keep_keys, keep_factor=keep_factor, keep_min=keep_min)
             save_state(state)
             log("DEBUG: state sizes after trim:", {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")})
