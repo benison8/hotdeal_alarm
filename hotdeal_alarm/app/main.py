@@ -1,5 +1,6 @@
 import json, os, re, time, html, traceback
 import sys
+import math
 from typing import Dict, List
 from collections import Counter
 from datetime import datetime
@@ -14,7 +15,6 @@ CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
 
 
 def log(*args):
-    # 예: 2025-12-21 22:12:34
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(ts, *args, flush=True)
 
@@ -109,6 +109,49 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
         return ""
 
 
+def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
+    """
+    첫 페이지 기준으로만 state를 유지하기 위한 정리 함수.
+    - keep_keys: 이번 사이클에서 수집된 items로부터 만든 key 목록
+    - keep_factor: len(keep_keys) * keep_factor 만큼까지 보관
+    - keep_min: 최소 보관 개수
+    """
+    if not keep_keys:
+        return
+
+    try:
+        factor = float(keep_factor)
+    except Exception:
+        factor = 1.5
+
+    try:
+        km = int(keep_min)
+    except Exception:
+        km = 50
+
+    limit = max(km, int(math.ceil(len(keep_keys) * max(1.0, factor))))
+
+    recent = []
+    seen_set = set()
+    for k in keep_keys:
+        if k in seen_set:
+            continue
+        recent.append(k)
+        seen_set.add(k)
+        if len(recent) >= limit:
+            break
+
+    keep = set(recent)
+
+    for bucket in ("seen", "mall_cache", "fail_count"):
+        d = state.get(bucket)
+        if not isinstance(d, dict) or not d:
+            continue
+        for k in list(d.keys()):
+            if k not in keep:
+                del d[k]
+
+
 def scrape_board_items(cfg: Dict) -> List[Dict]:
     out: List[Dict] = []
 
@@ -124,9 +167,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 sess.close()
             except Exception:
                 pass
-
             time.sleep(1)
-
             sess = make_requests_session()
             try:
                 return sess.get(url, timeout=20).text
@@ -161,52 +202,14 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
-
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
             if not text:
                 continue
-
             for m in re.finditer(ppomppu_regex, text, re.MULTILINE):
                 out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # clien
-    if cfg.get("use_site_clien"):
-        for board in ["allsell", "jirum"]:
-            if not cfg.get(f"use_board_clien_{board}"):
-                continue
-
-            if board == "allsell":
-                clien_regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
-                url = f"https://www.clien.net/service/group/{board}"
-            else:
-                clien_regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
-                url = f"https://www.clien.net/service/board/{board}"
-
-            text = safe_get_text(url)
-            if not text:
-                continue
-
-            for m in re.finditer(clien_regex, text, re.MULTILINE):
-                out.append({"site": "clien", "board": board, "title": m.group("title"), "url": m.group("url")})
-
-    # ruriweb
-    if cfg.get("use_site_ruriweb"):
-        for board in ["1020", "600004"]:
-            if not cfg.get(f"use_board_ruriweb_{board}"):
-                continue
-
-            url = f"https://bbs.ruliweb.com/market/board/{board}"
-            ruriweb_regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
-
-            text = safe_get_text(url)
-            if not text:
-                continue
-
-            for m in re.finditer(ruriweb_regex, text, re.MULTILINE):
-                out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
-
-    # quasarzone + 디버그
+    # quasarzone
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
@@ -235,7 +238,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                     "url": "https://quasarzone.com" + u if u.startswith("/") else u
                 })
 
-            # fallback: empty OR 0 matches
             if (not text) or (len(matches) == 0):
                 log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
                 text2 = http_get_text(url, use_cloudscraper=True)
@@ -272,12 +274,6 @@ def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
         regex = r'div class=wordfix>링크:\s+(?P<mall_url>[^<]+)'
-    elif site == "clien":
-        regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
-    elif site == "ruriweb":
-        regex = r'원본출처.+?(?P<mall_url>https?://[^\s\"<]+)'
-    elif site == "coolenjoy":
-        regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
     elif site == "quasarzone":
         regex = r'링크\s+(?P<mall_url>https?://[^\s\"<]+)'
 
@@ -369,12 +365,14 @@ def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
 def should_send(cfg: Dict, title: str):
     keywords = [k.strip() for k in (cfg.get("hotdeal_alarm_keyword") or "").split(",") if k.strip()]
     send_all = bool(cfg.get("use_hotdeal_alarm"))
+
     send_kw = False
     send_kw_dist = False
     if cfg.get("use_hotdeal_keyword_alarm") and keywords:
         send_kw = any(k.lower() in title.lower() for k in keywords)
     if cfg.get("use_hotdeal_keyword_alarm_dist") and keywords:
         send_kw_dist = any(k.lower() in title.lower() for k in keywords)
+
     return send_all or send_kw, send_kw_dist
 
 
@@ -391,8 +389,26 @@ def main():
 
         max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
 
+        # UI에서 조절되는 state 유지 정책(기본: 1.5배, 최소 50개)
+        keep_factor = float(cfg.get("state_keep_factor", 1.5) or 1.5)
+        keep_min = int(cfg.get("state_keep_min", 50) or 50)
+
         try:
             items = scrape_board_items(cfg)
+
+            # 첫 페이지 key 목록 생성(이 목록을 기준으로 state를 정리)
+            keep_keys: List[str] = []
+            for it in items:
+                site = it["site"]
+                board = it["board"]
+                raw_url = it["url"]
+                full_url = raw_url if raw_url.startswith("http") else (get_url_prefix(site) + raw_url)
+                keep_keys.append(f"{site}:{board}:{full_url}")
+
+            # state를 첫 페이지 기준으로 정리(메모리/파일 무한 증가 방지)
+            trim_state_to_firstpage(state, keep_keys, keep_factor=keep_factor, keep_min=keep_min)
+            save_state(state)
+            log("DEBUG: state sizes after trim:", {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")})
 
             log("ITEMS scraped:", len(items))
             c = Counter((it.get("site"), it.get("board")) for it in items)

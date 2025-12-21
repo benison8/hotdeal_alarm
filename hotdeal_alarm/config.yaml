@@ -1,6 +1,6 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.1.3"
+version: "1.1.4"
 description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/HA)"
 arch: [amd64, aarch64, armv7]
 startup: services
@@ -10,6 +10,13 @@ homeassistant_api: true
 
 options:
   interval_min: 1
+  # state(중복방지/캐시/실패카운트) 크기 제한
+  # 첫 페이지에서 수집된 글 개수의 몇 배까지 유지할지 (권장: 1.5)
+  state_keep_factor: 1.5
+
+  # 첫 페이지 글이 적은 경우를 대비한 최소 유지 개수
+  state_keep_min: 50
+
 
   # 사이트/게시판 선택
   use_site_ppomppu: false
@@ -57,6 +64,9 @@ options:
 
 schema:
   interval_min: int(1,)
+  state_keep_factor: float(1.0,)
+  state_keep_min: int(10,)
+
 
   use_site_ppomppu: bool
   use_board_ppomppu_ppomppu: bool
