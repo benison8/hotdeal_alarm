@@ -130,9 +130,9 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
 
-            print("PPOMPPU URL:", url)
-            print("PPOMPPU HTML length:", len(text))
-            print("PPOMPPU matches:", len(re.findall(ppomppu_regex, text, re.MULTILINE)))
+            #print("PPOMPPU URL:", url)
+            #print("PPOMPPU HTML length:", len(text))
+            #print("PPOMPPU matches:", len(re.findall(ppomppu_regex, text, re.MULTILINE)))
 
             if not text:
                 continue
@@ -155,9 +155,9 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
             text = safe_get_text(url)
 
-            print("CLIEN URL:", url)
-            print("CLIEN HTML length:", len(text))
-            print("CLIEN matches:", len(re.findall(clien_regex, text, re.MULTILINE)))
+            #print("CLIEN URL:", url)
+            #print("CLIEN HTML length:", len(text))
+            #print("CLIEN matches:", len(re.findall(clien_regex, text, re.MULTILINE)))
 
             if not text:
                 continue
@@ -176,9 +176,9 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
             text = safe_get_text(url)
 
-            print("RURIWEB URL:", url)
-            print("RURIWEB HTML length:", len(text))
-            print("RURIWEB matches:", len(re.findall(ruriweb_regex, text, re.MULTILINE)))
+            #print("RURIWEB URL:", url)
+            #print("RURIWEB HTML length:", len(text))
+            #print("RURIWEB matches:", len(re.findall(ruriweb_regex, text, re.MULTILINE)))
 
             if not text:
                 continue
@@ -199,9 +199,9 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 print("WARN: quasarzone fetch failed:", repr(e))
                 text = ""
 
-            print("QUASARZONE URL:", url)
-            print("QUASARZONE HTML length:", len(text))
-            print("QUASARZONE matches:", len(re.findall(quasar_regex, text, re.MULTILINE)))
+            #print("QUASARZONE URL:", url)
+            #print("QUASARZONE HTML length:", len(text))
+            #print("QUASARZONE matches:", len(re.findall(quasar_regex, text, re.MULTILINE)))
 
             if not text:
                 return out
@@ -327,15 +327,15 @@ def main():
         cfg = load_config()
         state = load_state()
 
-        print(
-            "CFG:",
-            "interval_min=", cfg.get("interval_min"),
-            "ppomppu=", cfg.get("use_site_ppomppu"),
-            "quasar=", cfg.get("use_site_quasarzone"),
-            "kw_main=", cfg.get("use_hotdeal_keyword_alarm"),
-            "kw=", cfg.get("hotdeal_alarm_keyword"),
-            "tg=", cfg.get("telegram_enable"),
-        )
+        #print(
+        #    "CFG:",
+        #    "interval_min=", cfg.get("interval_min"),
+        #    "ppomppu=", cfg.get("use_site_ppomppu"),
+        #    "quasar=", cfg.get("use_site_quasarzone"),
+        #    "kw_main=", cfg.get("use_hotdeal_keyword_alarm"),
+        #    "kw=", cfg.get("hotdeal_alarm_keyword"),
+        #    "tg=", cfg.get("telegram_enable"),
+        #)
 
         try:
             items = scrape_board_items(cfg)
