@@ -2,13 +2,22 @@ import json, os, re, time, html, traceback
 import sys
 from typing import Dict, List
 from collections import Counter
+from datetime import datetime
 
 import requests
 import cloudscraper
 
+
 DATA_DIR = "/data"
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
+
+
+def log(*args):
+    # 예: 2025-12-21 22:12:34
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(ts, *args, flush=True)
+
 
 site_map = {
     "ppomppu": "뽐뿌",
@@ -96,7 +105,7 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
                 pass
 
     except (requests.exceptions.RequestException, OSError) as e:
-        print("WARN: http_get_text failed:", url, "err=", repr(e))
+        log("WARN: http_get_text failed:", url, "err=", repr(e))
         return ""
 
 
@@ -110,7 +119,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         try:
             return sess.get(url, timeout=20).text
         except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
-            print("WARN: recreate session due to:", repr(e))
+            log("WARN: recreate session due to:", repr(e))
             try:
                 sess.close()
             except Exception:
@@ -122,7 +131,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             try:
                 return sess.get(url, timeout=20).text
             except Exception as e2:
-                print("WARN: retry failed:", repr(e2))
+                log("WARN: retry failed:", repr(e2))
                 return ""
 
     scraper = cloudscraper.create_scraper(
@@ -134,7 +143,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         try:
             return scraper.get(url, timeout=20).text
         except Exception as e:
-            print("WARN: cloudscraper failed, recreate scraper:", repr(e))
+            log("WARN: cloudscraper failed, recreate scraper:", repr(e))
             time.sleep(1)
             try:
                 scraper = cloudscraper.create_scraper(
@@ -142,7 +151,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 )
                 return scraper.get(url, timeout=20).text
             except Exception as e2:
-                print("WARN: cloudscraper retry failed:", repr(e2))
+                log("WARN: cloudscraper retry failed:", repr(e2))
                 return ""
 
     # ppomppu
@@ -197,7 +206,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in re.finditer(ruriweb_regex, text, re.MULTILINE):
                 out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # quasarzone (디버그 로그 추가)
+    # quasarzone + 디버그
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
@@ -205,17 +214,44 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
 
             text = safe_cloud_get_text(url)
-            print("DEBUG: quasarzone list html length (cloudscraper):", len(text))
+            log("DEBUG: quasarzone list html length (cloudscraper):", len(text))
 
+            matches = []
             if text:
                 try:
                     matches = list(re.finditer(quasar_regex, text, re.MULTILINE))
-                    print("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
                 except Exception as e:
-                    print("WARN: quasarzone regex error:", repr(e))
+                    log("WARN: quasarzone regex error:", repr(e))
                     matches = []
 
-                for m in matches:
+            log("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
+
+            for m in matches:
+                u = m.group("url")
+                out.append({
+                    "site": "quasarzone",
+                    "board": board,
+                    "title": m.group("title"),
+                    "url": "https://quasarzone.com" + u if u.startswith("/") else u
+                })
+
+            # fallback: empty OR 0 matches
+            if (not text) or (len(matches) == 0):
+                log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
+                text2 = http_get_text(url, use_cloudscraper=True)
+                log("DEBUG: quasarzone list html length (fallback):", len(text2))
+
+                matches2 = []
+                if text2:
+                    try:
+                        matches2 = list(re.finditer(quasar_regex, text2, re.MULTILINE))
+                    except Exception as e:
+                        log("WARN: quasarzone regex error (fallback):", repr(e))
+                        matches2 = []
+
+                log("DEBUG: quasarzone regex matches (fallback):", len(matches2))
+
+                for m in matches2:
                     u = m.group("url")
                     out.append({
                         "site": "quasarzone",
@@ -223,23 +259,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         "title": m.group("title"),
                         "url": "https://quasarzone.com" + u if u.startswith("/") else u
                     })
-
-            if not text or (text and "matches" in locals() and len(matches) == 0):
-                print("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
-                text2 = http_get_text(url, use_cloudscraper=True)
-                print("DEBUG: quasarzone list html length (fallback):", len(text2))
-
-                if text2:
-                    matches2 = list(re.finditer(quasar_regex, text2, re.MULTILINE))
-                    print("DEBUG: quasarzone regex matches (fallback):", len(matches2))
-                    for m in matches2:
-                        u = m.group("url")
-                        out.append({
-                            "site": "quasarzone",
-                            "board": board,
-                            "title": m.group("title"),
-                            "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                        })
 
     try:
         sess.close()
@@ -301,7 +320,7 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
         ).raise_for_status()
         return True
     except Exception as e:
-        print("WARN: telegram send failed:", repr(e))
+        log("WARN: telegram send failed:", repr(e))
         return False
 
 
@@ -315,7 +334,7 @@ def send_discord(cfg: Dict, msg: str) -> bool:
         requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
         return True
     except Exception as e:
-        print("WARN: discord send failed:", repr(e))
+        log("WARN: discord send failed:", repr(e))
         return False
 
 
@@ -343,7 +362,7 @@ def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
         return True
     except Exception as e:
-        print("WARN: ha notify failed:", repr(e))
+        log("WARN: ha notify failed:", repr(e))
         return False
 
 
@@ -361,20 +380,23 @@ def should_send(cfg: Dict, title: str):
 
 def main():
     os.makedirs(DATA_DIR, exist_ok=True)
+    log("DEBUG: addon started, entering main loop")
+
     while True:
+        cycle_start = time.time()
+        log("DEBUG: cycle start")
+
         cfg = load_config()
         state = load_state()
 
-        # 재시도 제한(기본 10)
         max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
 
         try:
             items = scrape_board_items(cfg)
 
-            # 전체 개수 + 사이트/게시판별 개수(핵심 디버그)
-            print("ITEMS scraped:", len(items))
+            log("ITEMS scraped:", len(items))
             c = Counter((it.get("site"), it.get("board")) for it in items)
-            print("ITEMS by site/board:", dict(c))
+            log("ITEMS by site/board:", dict(c))
 
             for it in items:
                 site = it["site"]
@@ -402,20 +424,21 @@ def main():
                 if not (send_main or send_dist):
                     continue
 
-                sent_any = False
                 msg = format_message(
                     cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
                     title, site, board, full_url, mall_url
                 )
 
+                sent_any = False
+
                 if send_main:
-                    print(f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
+                    log(f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
                     sent_any = (send_telegram(cfg, msg) or sent_any)
                     sent_any = (send_discord(cfg, msg) or sent_any)
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
                 if send_dist:
-                    print(f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
+                    log(f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
                     sent_any = (send_telegram(cfg, msg) or sent_any)
                     sent_any = (send_discord(cfg, msg) or sent_any)
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
@@ -430,23 +453,26 @@ def main():
                     state["fail_count"][key] = cur
 
                     if max_fail > 0 and cur >= max_fail:
-                        print(f"WARN: send failed {cur} times; give up and mark seen: {key}")
+                        log(f"WARN: send failed {cur} times; give up and mark seen: {key}")
                         state["seen"][key] = True
                         del state["fail_count"][key]
                     else:
-                        print(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
+                        log(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
 
                     save_state(state)
 
         except Exception as e:
-            print("ERROR:", e)
-            print(traceback.format_exc())
+            log("ERROR:", repr(e))
+            log(traceback.format_exc())
             if "No file descriptors available" in repr(e):
-                print("FATAL: No file descriptors available, exiting to trigger restart...")
+                log("FATAL: No file descriptors available, exiting to trigger restart...")
                 sys.exit(1)
 
         interval = int(cfg.get("interval_min", 1))
-        time.sleep(max(60, interval * 60))
+        sleep_s = max(60, interval * 60)
+        elapsed = time.time() - cycle_start
+        log(f"DEBUG: cycle end (elapsed={elapsed:.1f}s); sleeping {sleep_s}s")
+        time.sleep(sleep_s)
 
 
 if __name__ == "__main__":
