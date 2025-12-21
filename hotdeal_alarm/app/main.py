@@ -1,4 +1,5 @@
 import json, os, re, time, html, traceback
+import sys
 from typing import Dict, List
 
 import requests
@@ -70,7 +71,6 @@ def make_requests_session() -> requests.Session:
 
 
 def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
-    # 상세페이지(몰 링크 추출)는 실패해도 전체 루프를 죽이지 않게 방어
     try:
         if use_cloudscraper:
             sc = cloudscraper.create_scraper(
@@ -247,7 +247,6 @@ def scrape_mall_url(site: str, url: str) -> str:
     m = re.search(regex, text, re.MULTILINE)
     if not m:
         return ""
-
     return html.unescape(m.group("mall_url")).strip()
 
 
@@ -352,17 +351,13 @@ def main():
                 key = f"{site}:{board}:{full_url}"
 
                 if state["seen"].get(key):
-                    # 너무 시끄러우면 주석 처리 가능
-                    # print(f"SKIP(seen): {site}/{board} | {title} | {full_url}")
                     continue
 
-                # 먼저 키워드/정책 판단 (상세페이지 들어가기 전에!)
                 send_main, send_dist = should_send(cfg, title)
                 wants_detail = bool(send_main or send_dist)
 
                 mall_url = ""
                 if wants_detail:
-                    # mall_url 캐시/추출 (키워드 매칭된 것에 대해서만!)
                     mall_url = state["mall_cache"].get(key, "")
                     if not mall_url:
                         mall_url = scrape_mall_url(site, raw_url)
@@ -389,13 +384,16 @@ def main():
                     send_discord(cfg, msg)
                     send_homeassistant_notify(cfg, msg)
 
-                # 알림을 보내든 안 보내든, 신규 글은 seen 처리(현재 정책 유지)
                 state["seen"][key] = True
                 save_state(state)
 
         except Exception as e:
             print("ERROR:", e)
             print(traceback.format_exc())
+            # Errno 24(FD 한도 초과) 발생 시 비정상 종료 → 실행감시로 재시작 유도
+            if "No file descriptors available" in repr(e):
+                print("FATAL: No file descriptors available, exiting to trigger restart...")
+                sys.exit(1)
 
         interval = int(cfg.get("interval_min", 1))
         time.sleep(max(60, interval * 60))
