@@ -46,9 +46,15 @@ def load_config() -> Dict:
 
 def load_state() -> Dict:
     if not os.path.exists(STATE_FILE):
-        return {"seen": {}, "mall_cache": {}}
+        return {"seen": {}, "mall_cache": {}, "fail_count": {}}
     with open(STATE_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        st = json.load(f)
+    if not isinstance(st, dict):
+        return {"seen": {}, "mall_cache": {}, "fail_count": {}}
+    st.setdefault("seen", {})
+    st.setdefault("mall_cache", {})
+    st.setdefault("fail_count", {})
+    return st
 
 
 def save_state(state: Dict):
@@ -93,7 +99,7 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
 
 
 def scrape_board_items(cfg: Dict) -> List[Dict]:
-    out = []
+    out: List[Dict] = []
 
     sess = make_requests_session()
 
@@ -117,7 +123,25 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 print("WARN: retry failed:", repr(e2))
                 return ""
 
-    scraper = cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "android", "desktop": False})
+    scraper = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "android", "desktop": False}
+    )
+
+    def safe_cloud_get_text(url: str) -> str:
+        nonlocal scraper
+        try:
+            return scraper.get(url, timeout=20).text
+        except Exception as e:
+            print("WARN: cloudscraper failed, recreate scraper:", repr(e))
+            time.sleep(1)
+            try:
+                scraper = cloudscraper.create_scraper(
+                    browser={"browser": "chrome", "platform": "android", "desktop": False}
+                )
+                return scraper.get(url, timeout=20).text
+            except Exception as e2:
+                print("WARN: cloudscraper retry failed:", repr(e2))
+                return ""
 
     # ppomppu
     if cfg.get("use_site_ppomppu"):
@@ -129,11 +153,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
-
-            #print("PPOMPPU URL:", url)
-            #print("PPOMPPU HTML length:", len(text))
-            #print("PPOMPPU matches:", len(re.findall(ppomppu_regex, text, re.MULTILINE)))
-
             if not text:
                 continue
 
@@ -154,11 +173,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 url = f"https://www.clien.net/service/board/{board}"
 
             text = safe_get_text(url)
-
-            #print("CLIEN URL:", url)
-            #print("CLIEN HTML length:", len(text))
-            #print("CLIEN matches:", len(re.findall(clien_regex, text, re.MULTILINE)))
-
             if not text:
                 continue
 
@@ -175,11 +189,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             ruriweb_regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
 
             text = safe_get_text(url)
-
-            #print("RURIWEB URL:", url)
-            #print("RURIWEB HTML length:", len(text))
-            #print("RURIWEB matches:", len(re.findall(ruriweb_regex, text, re.MULTILINE)))
-
             if not text:
                 continue
 
@@ -193,27 +202,22 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             url = f"https://quasarzone.com/bbs/{board}"
             quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)</a>'
 
-            try:
-                text = scraper.get(url, timeout=20).text
-            except Exception as e:
-                print("WARN: quasarzone fetch failed:", repr(e))
-                text = ""
-
-            #print("QUASARZONE URL:", url)
-            #print("QUASARZONE HTML length:", len(text))
-            #print("QUASARZONE matches:", len(re.findall(quasar_regex, text, re.MULTILINE)))
+            text = safe_cloud_get_text(url)
+            if not text:
+                print("WARN: quasarzone empty html (cloudscraper), fallback to http_get_text(cloudscraper=True)")
+                text = http_get_text(url, use_cloudscraper=True)
 
             if not text:
-                return out
-
-            for m in re.finditer(quasar_regex, text, re.MULTILINE):
-                u = m.group("url")
-                out.append({
-                    "site": "quasarzone",
-                    "board": board,
-                    "title": m.group("title"),
-                    "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                })
+                print("WARN: quasarzone still empty html, skip this site this cycle")
+            else:
+                for m in re.finditer(quasar_regex, text, re.MULTILINE):
+                    u = m.group("url")
+                    out.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": m.group("title"),
+                        "url": "https://quasarzone.com" + u if u.startswith("/") else u
+                    })
 
     try:
         sess.close()
@@ -260,40 +264,50 @@ def format_message(template: str, title: str, site: str, board: str, url: str, m
     )
 
 
-def send_telegram(cfg: Dict, msg: str):
+def send_telegram(cfg: Dict, msg: str) -> bool:
     if not cfg.get("telegram_enable"):
-        return
+        return False
     token = cfg.get("telegram_bot_token")
     chat_id = cfg.get("telegram_chat_id")
     if not token or not chat_id:
-        return
-    requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": msg},
-        timeout=20
-    ).raise_for_status()
+        return False
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": msg},
+            timeout=20
+        ).raise_for_status()
+        return True
+    except Exception as e:
+        print("WARN: telegram send failed:", repr(e))
+        return False
 
 
-def send_discord(cfg: Dict, msg: str):
+def send_discord(cfg: Dict, msg: str) -> bool:
     if not cfg.get("discord_enable"):
-        return
+        return False
     webhook = cfg.get("discord_webhook_url")
     if not webhook:
-        return
-    requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
+        return False
+    try:
+        requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
+        return True
+    except Exception as e:
+        print("WARN: discord send failed:", repr(e))
+        return False
 
 
-def send_homeassistant_notify(cfg: Dict, msg: str):
+def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
     if not cfg.get("ha_notify_enable"):
-        return
+        return False
 
     service = (cfg.get("ha_notify_service") or "").strip()
     if not service.startswith("notify."):
-        return
+        return False
 
     token = os.getenv("SUPERVISOR_TOKEN")
     if not token:
-        return
+        return False
 
     domain, svc = service.split(".", 1)
     url = f"http://supervisor/core/api/services/{domain}/{svc}"
@@ -305,8 +319,10 @@ def send_homeassistant_notify(cfg: Dict, msg: str):
 
     try:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
-    except Exception:
-        return
+        return True
+    except Exception as e:
+        print("WARN: ha notify failed:", repr(e))
+        return False
 
 
 def should_send(cfg: Dict, title: str):
@@ -327,15 +343,8 @@ def main():
         cfg = load_config()
         state = load_state()
 
-        #print(
-        #    "CFG:",
-        #    "interval_min=", cfg.get("interval_min"),
-        #    "ppomppu=", cfg.get("use_site_ppomppu"),
-        #    "quasar=", cfg.get("use_site_quasarzone"),
-        #    "kw_main=", cfg.get("use_hotdeal_keyword_alarm"),
-        #    "kw=", cfg.get("hotdeal_alarm_keyword"),
-        #    "tg=", cfg.get("telegram_enable"),
-        #)
+        # 0이면 무한 재시도(사용자 요구: 반드시 알림)로 해석
+        max_fail = int(cfg.get("max_send_fail_retries", 10) or 0)
 
         try:
             items = scrape_board_items(cfg)
@@ -364,33 +373,54 @@ def main():
                         if mall_url:
                             state["mall_cache"][key] = mall_url
 
+                # 키워드/전체알림 조건이 아니라면 seen 처리하지 않고 그냥 스킵
+                if not (send_main or send_dist):
+                    continue
+
+                sent_any = False
+                msg = format_message(
+                    cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
+                    title, site, board, full_url, mall_url
+                )
+
                 if send_main:
-                    msg = format_message(
-                        cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
-                        title, site, board, full_url, mall_url
-                    )
                     print(f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
-                    send_telegram(cfg, msg)
-                    send_discord(cfg, msg)
-                    send_homeassistant_notify(cfg, msg)
+                    sent_any = (send_telegram(cfg, msg) or sent_any)
+                    sent_any = (send_discord(cfg, msg) or sent_any)
+                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
                 if send_dist:
-                    msg = format_message(
-                        cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
-                        title, site, board, full_url, mall_url
-                    )
                     print(f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
-                    send_telegram(cfg, msg)
-                    send_discord(cfg, msg)
-                    send_homeassistant_notify(cfg, msg)
+                    sent_any = (send_telegram(cfg, msg) or sent_any)
+                    sent_any = (send_discord(cfg, msg) or sent_any)
+                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
-                state["seen"][key] = True
-                save_state(state)
+                if sent_any:
+                    # 성공했으면 중복방지 처리 + 실패카운트 정리
+                    state["seen"][key] = True
+                    if key in state["fail_count"]:
+                        del state["fail_count"][key]
+                    save_state(state)
+                else:
+                    # 실패했으면 카운트 증가
+                    cur = int(state["fail_count"].get(key, 0))
+                    cur += 1
+                    state["fail_count"][key] = cur
+
+                    if max_fail > 0 and cur >= max_fail:
+                        # 제한 도달: 더 이상 재시도하지 않고 seen 처리(스팸/무한루프 방지)
+                        print(f"WARN: send failed {cur} times; give up and mark seen: {key}")
+                        state["seen"][key] = True
+                        # 실패카운트도 정리(선택)
+                        del state["fail_count"][key]
+                    else:
+                        print(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
+
+                    save_state(state)
 
         except Exception as e:
             print("ERROR:", e)
             print(traceback.format_exc())
-            # Errno 24(FD 한도 초과) 발생 시 비정상 종료 → 실행감시로 재시작 유도
             if "No file descriptors available" in repr(e):
                 print("FATAL: No file descriptors available, exiting to trigger restart...")
                 sys.exit(1)
