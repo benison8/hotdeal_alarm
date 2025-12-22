@@ -143,7 +143,6 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
         return sess.get(url, timeout=20).text
 
     except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
-        # 세션 쪽 오류면 세션 재생성 후 한 번 재시도
         log("WARN: http_get_text session error:", url, "err=", repr(e))
         time.sleep(1)
         try:
@@ -154,7 +153,6 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
             return ""
 
     except Exception as e:
-        # cloudscraper 쪽 오류면 scraper 재생성 후 한 번 재시도
         log("WARN: http_get_text failed:", url, "err=", repr(e))
         if use_cloudscraper:
             time.sleep(1)
@@ -208,29 +206,29 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     out: List[Dict] = []
 
     def safe_get_text(url: str) -> str:
-        try:
-            return http_get_text(url, use_cloudscraper=False)
-        except Exception:
-            return ""
+        return http_get_text(url, use_cloudscraper=False) or ""
 
     def safe_cloud_get_text(url: str) -> str:
-        try:
-            return http_get_text(url, use_cloudscraper=True)
-        except Exception:
-            return ""
+        return http_get_text(url, use_cloudscraper=True) or ""
 
-    # ppomppu
+    # ppomppu (최상단 1개 스킵)
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
         ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)</span></a>'
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
+
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
             if not text:
                 continue
+
+            skip_first = True
             for m in re.finditer(ppomppu_regex, text, re.MULTILINE):
+                if skip_first:
+                    skip_first = False
+                    continue
                 out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
 
     # clien
@@ -238,7 +236,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in ["allsell", "jirum"]:
             if not cfg.get(f"use_board_clien_{board}"):
                 continue
-
             if board == "allsell":
                 regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
                 url = f"https://www.clien.net/service/group/{board}"
