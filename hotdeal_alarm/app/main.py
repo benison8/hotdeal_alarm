@@ -369,13 +369,14 @@ def scrape_mall_url(site: str, url: str) -> str:
 
 
 def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
+    template = (template or "").replace("\\n", "\n")
     return (template
-            .replace("{title}", title)
-            .replace("{site}", site_map.get(site, site))
-            .replace("{board}", board_map.get(board, board))
-            .replace("{url}", url)
-            .replace("{mall_url}", mall_url or "")
-            )
+        .replace("{title}", title)
+        .replace("{site}", site_map.get(site, site))
+        .replace("{board}", board_map.get(board, board))
+        .replace("{url}", url)
+        .replace("{mall_url}", mall_url or "")
+    )
 
 
 def send_telegram(cfg: Dict, msg: str) -> bool:
