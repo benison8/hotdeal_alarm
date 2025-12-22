@@ -1,4 +1,9 @@
-import json, os, re, time, html, traceback
+import json
+import os
+import re
+import time
+import html
+import traceback
 import sys
 import math
 from typing import Dict, List
@@ -26,6 +31,7 @@ site_map = {
     "coolenjoy": "쿨엔조이",
     "quasarzone": "퀘이사존",
 }
+
 board_map = {
     "ppomppu": "뽐뿌게시판",
     "ppomppu4": "해외뽐뿌",
@@ -84,12 +90,14 @@ def save_state(state: Dict):
 
 def make_requests_session() -> requests.Session:
     s = requests.session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        "Connection": "close",
-    })
+    s.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "Connection": "close",
+        }
+    )
     return s
 
 
@@ -275,12 +283,14 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 continue
             for m in re.finditer(regex, text, re.MULTILINE):
                 u = m.group("url")
-                out.append({
-                    "site": "coolenjoy",
-                    "board": board,
-                    "title": m.group("title"),
-                    "url": "https://coolenjoy.net" + u if u.startswith("/") else u
-                })
+                out.append(
+                    {
+                        "site": "coolenjoy",
+                        "board": board,
+                        "title": m.group("title"),
+                        "url": "https://coolenjoy.net" + u if u.startswith("/") else u,
+                    }
+                )
 
     # quasarzone
     if cfg.get("use_site_quasarzone"):
@@ -304,12 +314,14 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
             for m in matches:
                 u = m.group("url")
-                out.append({
-                    "site": "quasarzone",
-                    "board": board,
-                    "title": m.group("title"),
-                    "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                })
+                out.append(
+                    {
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": m.group("title"),
+                        "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                    }
+                )
 
             if (not text) or (len(matches) == 0):
                 log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
@@ -328,12 +340,14 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
                 for m in matches2:
                     u = m.group("url")
-                    out.append({
-                        "site": "quasarzone",
-                        "board": board,
-                        "title": m.group("title"),
-                        "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                    })
+                    out.append(
+                        {
+                            "site": "quasarzone",
+                            "board": board,
+                            "title": m.group("title"),
+                            "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                        }
+                    )
 
     return out
 
@@ -354,7 +368,6 @@ def scrape_mall_url(site: str, url: str) -> str:
     if not regex:
         return ""
 
-
     full = url if url.startswith("http") else (get_url_prefix(site) + url)
     text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
     if not text:
@@ -367,11 +380,10 @@ def scrape_mall_url(site: str, url: str) -> str:
     return html.unescape(m.group("mall_url")).strip()
 
 
-
 def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
     template = (template or "").replace("\\n", "\n")
-    return (template
-        .replace("{title}", title)
+    return (
+        template.replace("{title}", title)
         .replace("{site}", site_map.get(site, site))
         .replace("{board}", board_map.get(board, board))
         .replace("{url}", url)
@@ -390,7 +402,7 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": msg},
-            timeout=20
+            timeout=20,
         ).raise_for_status()
         return True
     except Exception as e:
@@ -482,7 +494,10 @@ def main():
 
             trim_state_to_firstpage(state, keep_keys, keep_factor=keep_factor, keep_min=keep_min)
             save_state(state)
-            log("DEBUG: state sizes after trim:", {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")})
+            log(
+                "DEBUG: state sizes after trim:",
+                {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")},
+            )
 
             log("ITEMS scraped:", len(items))
             c = Counter((it.get("site"), it.get("board")) for it in items)
@@ -505,30 +520,39 @@ def main():
 
                 mall_url = ""
                 if wants_detail:
-                    mall_url = state["mall_cache"].get(key, "")
-                    if not mall_url:
-                        mall_url = scrape_mall_url(site, raw_url)
-                        if mall_url:
-                            state["mall_cache"][key] = mall_url
+                    # mall_url은 실패해도 게시물 주소(key) 기준으로 한 번만 시도(빈 값도 저장)
+                    if key in state["mall_cache"]:
+                        mall_url = state["mall_cache"].get(key, "")
+                    else:
+                        mall_url = scrape_mall_url(site, raw_url)   # <= 정규식은 그대로 scrape_mall_url() 안에 있음
+                        state["mall_cache"][key] = mall_url         # 빈 값도 저장
 
                 if not (send_main or send_dist):
                     continue
 
                 msg = format_message(
                     cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
-                    title, site, board, full_url, mall_url
+                    title,
+                    site,
+                    board,
+                    full_url,
+                    mall_url,
                 )
 
                 sent_any = False
 
                 if send_main:
-                    log(f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
+                    log(
+                        f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}"
+                    )
                     sent_any = (send_telegram(cfg, msg) or sent_any)
                     sent_any = (send_discord(cfg, msg) or sent_any)
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
                 if send_dist:
-                    log(f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}")
+                    log(
+                        f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}"
+                    )
                     sent_any = (send_telegram(cfg, msg) or sent_any)
                     sent_any = (send_discord(cfg, msg) or sent_any)
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
@@ -539,16 +563,13 @@ def main():
                         del state["fail_count"][key]
                     save_state(state)
                 else:
+                    # 실패 횟수 카운트
                     cur = int(state["fail_count"].get(key, 0)) + 1
                     state["fail_count"][key] = cur
-
+                    # (max_fail에 도달하면 seen 처리)
                     if max_fail > 0 and cur >= max_fail:
-                        log(f"WARN: send failed {cur} times; give up and mark seen: {key}")
                         state["seen"][key] = True
                         del state["fail_count"][key]
-                    else:
-                        log(f"WARN: no channel succeeded; will retry next cycle ({cur}/{max_fail or '∞'}): {key}")
-
                     save_state(state)
 
         except Exception as e:
