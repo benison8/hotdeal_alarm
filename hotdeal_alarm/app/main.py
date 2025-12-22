@@ -339,31 +339,47 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
 
 def scrape_mall_url(site: str, url: str) -> str:
-    regex = None
-    if site == "ppomppu":
-         regex = r"<li class=['\"]topTitle-link(?:\s+partner)?['\"]>.*?<a href=['\"](?P<mall_url>https?://[^'\"]+)['\"]"
-    elif site == "clien":
-        regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
-    elif site == "ruriweb":
-        regex = r'원본출처.+?(?P<mall_url>https?://[^\s\"<]+)'
-    elif site == "coolenjoy":
-        regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
-    elif site == "quasarzone":
-        regex = r'<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>'
-    if not regex:
-        return ""
-
-
     full = url if url.startswith("http") else (get_url_prefix(site) + url)
     text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
     if not text:
         return ""
 
-    m = re.search(regex, text, re.MULTILINE | re.DOTALL)
-    if not m:
+    if site == "ppomppu":
+        patterns = [
+            # topTitle-link / topTitle-link partner (class 속성에 topTitle-link가 포함되면 OK)
+            r"<li[^>]*class=['\"][^'\"]*\btopTitle-link\b[^'\"]*['\"][^>]*>.*?"
+            r"<a[^>]*href=['\"](?P<mall_url>https?://[^'\"]+)['\"]",
+            # (예전/다른 스킨 대비) wordfix + '링크'
+            r"class=['\"]wordfix['\"][^>]*>.*?링크.*?(?P<mall_url>https?://[^\s\"'<>]+)",
+        ]
+        for rx in patterns:
+            m = re.search(rx, text, re.MULTILINE | re.DOTALL)
+            if m:
+                return html.unescape(m.group("mall_url")).strip()
         return ""
 
-    return html.unescape(m.group("mall_url")).strip()
+    if site == "clien":
+        m = re.search(r"구매링크.+?>(?P<mall_url>[^<]+)<", text, re.MULTILINE | re.DOTALL)
+        return html.unescape(m.group("mall_url")).strip() if m else ""
+
+    if site == "ruriweb":
+        m = re.search(r"원본출처.+?(?P<mall_url>https?://[^\s\"'<]+)", text, re.MULTILINE | re.DOTALL)
+        return html.unescape(m.group("mall_url")).strip() if m else ""
+
+    if site == "coolenjoy":
+        m = re.search(r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<', text, re.MULTILINE | re.DOTALL)
+        return html.unescape(m.group("mall_url")).strip() if m else ""
+
+    if site == "quasarzone":
+        m = re.search(
+            r"<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>",
+            text,
+            re.MULTILINE | re.DOTALL,
+        )
+        return html.unescape(m.group("mall_url")).strip() if m else ""
+
+    return ""
+
 
 
 
