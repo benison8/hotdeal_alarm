@@ -349,7 +349,7 @@ def scrape_mall_url(site: str, url: str) -> str:
     elif site == "coolenjoy":
         regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
     elif site == "quasarzone":
-        regex = r'링크\s+(?P<mall_url>https?://[^\s\"<]+)'
+        regex = r'<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>'
 
     if not regex:
         return ""
