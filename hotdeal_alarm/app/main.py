@@ -344,41 +344,64 @@ def scrape_mall_url(site: str, url: str) -> str:
     if not text:
         return ""
 
+    flags = re.MULTILINE | re.DOTALL
+
     if site == "ppomppu":
         patterns = [
-            # topTitle-link / topTitle-link partner (class 속성에 topTitle-link가 포함되면 OK)
+            # (1) 상단 링크: topTitle-link / topTitle-link partner / class 순서 변형 대응
             r"<li[^>]*class=['\"][^'\"]*\btopTitle-link\b[^'\"]*['\"][^>]*>.*?"
             r"<a[^>]*href=['\"](?P<mall_url>https?://[^'\"]+)['\"]",
-            # (예전/다른 스킨 대비) wordfix + '링크'
+
+            # (2) 구형/다른 스킨: wordfix + '링크'
             r"class=['\"]wordfix['\"][^>]*>.*?링크.*?(?P<mall_url>https?://[^\s\"'<>]+)",
+
+            # (3) 본문 컨텐츠 영역에서 첫 외부 링크(컨텐츠 컨테이너 후보를 먼저 찾고 그 안에서 링크 추출)
+            r"(?:id=['\"]writeContents['\"]|id=['\"]realArticle['\"]|class=['\"]board-contents['\"]).*?"
+            r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]",
         ]
+
         for rx in patterns:
-            m = re.search(rx, text, re.MULTILINE | re.DOTALL)
+            m = re.search(rx, text, flags)
             if m:
-                return html.unescape(m.group("mall_url")).strip()
+                u = html.unescape(m.group("mall_url")).strip()
+                # 내부링크/스크립트 링크 제외
+                if "ppomppu.co.kr" in u:
+                    continue
+                if u.startswith("javascript:"):
+                    continue
+                return u
+
+        # (4) 최후 fallback: 문서 전체에서 첫 외부 링크 (메뉴/공유 등이 잡힐 수 있어 마지막에만 사용)
+        m = re.search(r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]", text, flags)
+        if m:
+            u = html.unescape(m.group("mall_url")).strip()
+            if "ppomppu.co.kr" not in u and not u.startswith("javascript:"):
+                return u
+
         return ""
 
     if site == "clien":
-        m = re.search(r"구매링크.+?>(?P<mall_url>[^<]+)<", text, re.MULTILINE | re.DOTALL)
+        m = re.search(r"구매링크.+?>(?P<mall_url>[^<]+)<", text, flags)
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     if site == "ruriweb":
-        m = re.search(r"원본출처.+?(?P<mall_url>https?://[^\s\"'<]+)", text, re.MULTILINE | re.DOTALL)
+        m = re.search(r"원본출처.+?(?P<mall_url>https?://[^\s\"'<]+)", text, flags)
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     if site == "coolenjoy":
-        m = re.search(r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<', text, re.MULTILINE | re.DOTALL)
+        m = re.search(r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<', text, flags)
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     if site == "quasarzone":
         m = re.search(
             r"<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>",
             text,
-            re.MULTILINE | re.DOTALL,
+            flags,
         )
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     return ""
+
 
 
 
