@@ -341,7 +341,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
-        regex = r'<li class=\"topTitle-link partner\">.+?<a href=\"(?P<mall_url>https?://[^\"]+)\"'
+         regex = r"<li class=['\"]topTitle-link(?:\s+partner)?['\"]>.*?<a href=['\"](?P<mall_url>https?://[^'\"]+)['\"]"
     elif site == "clien":
         regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
     elif site == "ruriweb":
@@ -350,7 +350,6 @@ def scrape_mall_url(site: str, url: str) -> str:
         regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
     elif site == "quasarzone":
         regex = r'<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>'
-
     if not regex:
         return ""
 
