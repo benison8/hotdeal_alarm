@@ -8,7 +8,6 @@ from datetime import datetime
 import requests
 import cloudscraper
 
-
 DATA_DIR = "/data"
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
@@ -26,6 +25,7 @@ site_map = {
     "coolenjoy": "쿨엔조이",
     "quasarzone": "퀘이사존",
 }
+
 board_map = {
     "ppomppu": "뽐뿌게시판",
     "ppomppu4": "해외뽐뿌",
@@ -84,12 +84,14 @@ def save_state(state: Dict):
 
 def make_requests_session() -> requests.Session:
     s = requests.session()
-    s.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
-        "Connection": "close",
-    })
+    s.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+            "Connection": "close",
+        }
+    )
     return s
 
 
@@ -192,7 +194,6 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
             break
 
     keep = set(recent)
-
     for bucket in ("seen", "mall_cache", "fail_count"):
         d = state.get(bucket)
         if not isinstance(d, dict) or not d:
@@ -214,7 +215,8 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     # ppomppu (최상단 1개 스킵)
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)</span></a>'
+        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)'
+
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
@@ -236,16 +238,18 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in ["allsell", "jirum"]:
             if not cfg.get(f"use_board_clien_{board}"):
                 continue
+
             if board == "allsell":
                 regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
                 url = f"https://www.clien.net/service/group/{board}"
             else:
-                regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
+                regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)'
                 url = f"https://www.clien.net/service/board/{board}"
 
             text = safe_get_text(url)
             if not text:
                 continue
+
             for m in re.finditer(regex, text, re.MULTILINE):
                 out.append({"site": "clien", "board": board, "title": m.group("title"), "url": m.group("url")})
 
@@ -254,11 +258,13 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in ["1020", "600004"]:
             if not cfg.get(f"use_board_ruriweb_{board}"):
                 continue
+
             url = f"https://bbs.ruliweb.com/market/board/{board}"
             text = safe_get_text(url)
             if not text:
                 continue
-            regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
+
+            regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)'
             for m in re.finditer(regex, text, re.MULTILINE):
                 out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
 
@@ -268,26 +274,28 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in boards:
             if not cfg.get(f"use_board_coolenjoy_{board}"):
                 continue
-            regex = r'<td class=\"td_subject\">\s+<a href=\"(?P<url>.+)\">\s+(?:<font color=.+?>)?(?P<title>.+?)(?:</font>)?\s+<span class=\"sound_only\"'
             url = f"https://coolenjoy.net/bbs/{board}"
             text = safe_get_text(url)
             if not text:
                 continue
+            regex = r'td class=\"td_subject\"><a href=\"(?P<url>.+?)\".*?>\s*(?:<span[^>]*>)?(?P<title>.+?)(?:</span>)?\s*<'
             for m in re.finditer(regex, text, re.MULTILINE):
                 u = m.group("url")
-                out.append({
-                    "site": "coolenjoy",
-                    "board": board,
-                    "title": m.group("title"),
-                    "url": "https://coolenjoy.net" + u if u.startswith("/") else u
-                })
+                out.append(
+                    {
+                        "site": "coolenjoy",
+                        "board": board,
+                        "title": m.group("title"),
+                        "url": "https://coolenjoy.net" + u if u.startswith("/") else u,
+                    }
+                )
 
     # quasarzone
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-            quasar_regex = r'<p class=\"tit\">\s+<a href=\"(?P<url>.+)\"\s+class=.+>\s+.+\s+(?:<span class=\"ellipsis-with-reply-cnt\">)?(?P<title>.+?)(?:</span>)'
+            quasar_regex = r'href=\"(?P<url>/bbs/qb_saleinfo/views/\d+)\"[^>]*>(?P<title>[^<]+)'
 
             text = safe_cloud_get_text(url)
             log("DEBUG: quasarzone list html length (cloudscraper):", len(text))
@@ -301,15 +309,16 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                     matches = []
 
             log("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
-
             for m in matches:
                 u = m.group("url")
-                out.append({
-                    "site": "quasarzone",
-                    "board": board,
-                    "title": m.group("title"),
-                    "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                })
+                out.append(
+                    {
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": m.group("title"),
+                        "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                    }
+                )
 
             if (not text) or (len(matches) == 0):
                 log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
@@ -325,15 +334,16 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         matches2 = []
 
                 log("DEBUG: quasarzone regex matches (fallback):", len(matches2))
-
                 for m in matches2:
                     u = m.group("url")
-                    out.append({
-                        "site": "quasarzone",
-                        "board": board,
-                        "title": m.group("title"),
-                        "url": "https://quasarzone.com" + u if u.startswith("/") else u
-                    })
+                    out.append(
+                        {
+                            "site": "quasarzone",
+                            "board": board,
+                            "title": m.group("title"),
+                            "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                        }
+                    )
 
     return out
 
@@ -348,14 +358,12 @@ def scrape_mall_url(site: str, url: str) -> str:
 
     if site == "ppomppu":
         patterns = [
-            # (1) 상단 링크: topTitle-link / topTitle-link partner / class 순서 변형 대응
+            # (1) 상단 링크: topTitle-link / partner 포함 / class 순서 변형 대응
             r"<li[^>]*class=['\"][^'\"]*\btopTitle-link\b[^'\"]*['\"][^>]*>.*?"
             r"<a[^>]*href=['\"](?P<mall_url>https?://[^'\"]+)['\"]",
-
-            # (2) 구형/다른 스킨: wordfix + '링크'
+            # (2) 구형/다른 스킨: wordfix + 링크
             r"class=['\"]wordfix['\"][^>]*>.*?링크.*?(?P<mall_url>https?://[^\s\"'<>]+)",
-
-            # (3) 본문 컨텐츠 영역에서 첫 외부 링크(컨텐츠 컨테이너 후보를 먼저 찾고 그 안에서 링크 추출)
+            # (3) 본문 컨텐츠 영역에서 첫 외부 링크(컨텐츠 컨테이너 후보 내)
             r"(?:id=['\"]writeContents['\"]|id=['\"]realArticle['\"]|class=['\"]board-contents['\"]).*?"
             r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]",
         ]
@@ -364,14 +372,13 @@ def scrape_mall_url(site: str, url: str) -> str:
             m = re.search(rx, text, flags)
             if m:
                 u = html.unescape(m.group("mall_url")).strip()
-                # 내부링크/스크립트 링크 제외
                 if "ppomppu.co.kr" in u:
                     continue
                 if u.startswith("javascript:"):
                     continue
                 return u
 
-        # (4) 최후 fallback: 문서 전체에서 첫 외부 링크 (메뉴/공유 등이 잡힐 수 있어 마지막에만 사용)
+        # (4) 최후 fallback: 문서 전체에서 첫 외부 링크
         m = re.search(r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]", text, flags)
         if m:
             u = html.unescape(m.group("mall_url")).strip()
@@ -393,6 +400,7 @@ def scrape_mall_url(site: str, url: str) -> str:
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     if site == "quasarzone":
+        # href가 javascript:goToLink('...') 형태라서, a태그 "텍스트(표시 URL)"를 추출
         m = re.search(
             r"<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>",
             text,
@@ -403,13 +411,10 @@ def scrape_mall_url(site: str, url: str) -> str:
     return ""
 
 
-
-
-
 def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
     template = (template or "").replace("\\n", "\n")
-    return (template
-        .replace("{title}", title)
+    return (
+        template.replace("{title}", title)
         .replace("{site}", site_map.get(site, site))
         .replace("{board}", board_map.get(board, board))
         .replace("{url}", url)
@@ -428,7 +433,7 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": msg},
-            timeout=20
+            timeout=20,
         ).raise_for_status()
         return True
     except Exception as e:
@@ -464,10 +469,7 @@ def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
 
     domain, svc = service.split(".", 1)
     url = f"http://supervisor/core/api/services/{domain}/{svc}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     payload = {"message": msg}
 
     try:
@@ -484,8 +486,10 @@ def should_send(cfg: Dict, title: str):
 
     send_kw = False
     send_kw_dist = False
+
     if cfg.get("use_hotdeal_keyword_alarm") and keywords:
         send_kw = any(k.lower() in title.lower() for k in keywords)
+
     if cfg.get("use_hotdeal_keyword_alarm_dist") and keywords:
         send_kw_dist = any(k.lower() in title.lower() for k in keywords)
 
@@ -520,9 +524,10 @@ def main():
 
             trim_state_to_firstpage(state, keep_keys, keep_factor=keep_factor, keep_min=keep_min)
             save_state(state)
-            log("DEBUG: state sizes after trim:", {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")})
 
+            log("DEBUG: state sizes after trim:", {k: len(state.get(k, {})) for k in ("seen", "mall_cache", "fail_count")})
             log("ITEMS scraped:", len(items))
+
             c = Counter((it.get("site"), it.get("board")) for it in items)
             log("ITEMS by site/board:", dict(c))
 
@@ -530,8 +535,8 @@ def main():
                 site = it["site"]
                 board = it["board"]
                 title = (it["title"] or "").strip()
-                raw_url = it["url"]
 
+                raw_url = it["url"]
                 full_url = raw_url if raw_url.startswith("http") else (get_url_prefix(site) + raw_url)
                 key = f"{site}:{board}:{full_url}"
 
@@ -554,7 +559,11 @@ def main():
 
                 msg = format_message(
                     cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
-                    title, site, board, full_url, mall_url
+                    title,
+                    site,
+                    board,
+                    full_url,
+                    mall_url,
                 )
 
                 sent_any = False
