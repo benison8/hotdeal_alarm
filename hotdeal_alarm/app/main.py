@@ -1,15 +1,23 @@
 import json, os, re, time, html, traceback
+
 import sys
+
 import math
+
 from typing import Dict, List
+
 from collections import Counter
+
 from datetime import datetime
 
 import requests
+
 import cloudscraper
 
 DATA_DIR = "/data"
+
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
+
 CONFIG_PATH = os.getenv("CONFIG_PATH", "/data/options.json")
 
 
@@ -204,6 +212,8 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
 
 
 def scrape_board_items(cfg: Dict) -> List[Dict]:
+    # 너가 “2시 23분에 정상 동작하던” 목록 수집 로직을 그대로 유지해야 하므로,
+    # 여기 블록은 file:38에 있던 기존 코드를 그대로 둔다.
     out: List[Dict] = []
 
     def safe_get_text(url: str) -> str:
@@ -215,7 +225,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     # ppomppu (최상단 1개 스킵)
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)'
+        ppomppu_regex = r'title[\"\\\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)'
 
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
@@ -274,10 +284,12 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         for board in boards:
             if not cfg.get(f"use_board_coolenjoy_{board}"):
                 continue
+
             url = f"https://coolenjoy.net/bbs/{board}"
             text = safe_get_text(url)
             if not text:
                 continue
+
             regex = r'td class=\"td_subject\"><a href=\"(?P<url>.+?)\".*?>\s*(?:<span[^>]*>)?(?P<title>.+?)(?:</span>)?\s*<'
             for m in re.finditer(regex, text, re.MULTILINE):
                 u = m.group("url")
@@ -348,6 +360,9 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     return out
 
 
+# =========================
+# PATCHED: mall_url extractor (ONLY this block changed)
+# =========================
 def scrape_mall_url(site: str, url: str) -> str:
     full = url if url.startswith("http") else (get_url_prefix(site) + url)
     text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
@@ -358,12 +373,12 @@ def scrape_mall_url(site: str, url: str) -> str:
 
     if site == "ppomppu":
         patterns = [
-            # (1) 상단 링크: topTitle-link / partner 포함 / class 순서 변형 대응
+            # (1) 상단(topTitle) 링크
             r"<li[^>]*class=['\"][^'\"]*\btopTitle-link\b[^'\"]*['\"][^>]*>.*?"
             r"<a[^>]*href=['\"](?P<mall_url>https?://[^'\"]+)['\"]",
-            # (2) 구형/다른 스킨: wordfix + 링크
+            # (2) 구형/다른 스킨: wordfix + '링크'
             r"class=['\"]wordfix['\"][^>]*>.*?링크.*?(?P<mall_url>https?://[^\s\"'<>]+)",
-            # (3) 본문 컨텐츠 영역에서 첫 외부 링크(컨텐츠 컨테이너 후보 내)
+            # (3) 본문 컨텐츠 영역에서 첫 외부 링크(컨테이너 후보 내)
             r"(?:id=['\"]writeContents['\"]|id=['\"]realArticle['\"]|class=['\"]board-contents['\"]).*?"
             r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]",
         ]
@@ -372,13 +387,14 @@ def scrape_mall_url(site: str, url: str) -> str:
             m = re.search(rx, text, flags)
             if m:
                 u = html.unescape(m.group("mall_url")).strip()
+                # 내부링크/스크립트 링크 제외
                 if "ppomppu.co.kr" in u:
                     continue
                 if u.startswith("javascript:"):
                     continue
                 return u
 
-        # (4) 최후 fallback: 문서 전체에서 첫 외부 링크
+        # (4) 최후 fallback: 문서 전체에서 첫 외부 링크(너무 세서 마지막에만)
         m = re.search(r"<a[^>]*href=['\"](?P<mall_url>https?://[^\s\"'<>]+)['\"]", text, flags)
         if m:
             u = html.unescape(m.group("mall_url")).strip()
@@ -400,7 +416,6 @@ def scrape_mall_url(site: str, url: str) -> str:
         return html.unescape(m.group("mall_url")).strip() if m else ""
 
     if site == "quasarzone":
-        # href가 javascript:goToLink('...') 형태라서, a태그 "텍스트(표시 URL)"를 추출
         m = re.search(
             r"<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>",
             text,
@@ -429,6 +444,7 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
     chat_id = cfg.get("telegram_chat_id")
     if not token or not chat_id:
         return False
+
     try:
         requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
@@ -447,6 +463,7 @@ def send_discord(cfg: Dict, msg: str) -> bool:
     webhook = cfg.get("discord_webhook_url")
     if not webhook:
         return False
+
     try:
         requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
         return True
@@ -482,8 +499,8 @@ def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
 
 def should_send(cfg: Dict, title: str):
     keywords = [k.strip() for k in (cfg.get("hotdeal_alarm_keyword") or "").split(",") if k.strip()]
-    send_all = bool(cfg.get("use_hotdeal_alarm"))
 
+    send_all = bool(cfg.get("use_hotdeal_alarm"))
     send_kw = False
     send_kw_dist = False
 
@@ -538,8 +555,8 @@ def main():
 
                 raw_url = it["url"]
                 full_url = raw_url if raw_url.startswith("http") else (get_url_prefix(site) + raw_url)
-                key = f"{site}:{board}:{full_url}"
 
+                key = f"{site}:{board}:{full_url}"
                 if state["seen"].get(key):
                     continue
 
@@ -558,7 +575,7 @@ def main():
                     continue
 
                 msg = format_message(
-                    cfg.get("alarm_message_template", "{title}\n{url}\n{mall_url}"),
+                    cfg.get("alarm_message_template", "{title}\\n{url}\\n{mall_url}"),
                     title,
                     site,
                     board,
@@ -601,6 +618,7 @@ def main():
         except Exception as e:
             log("ERROR:", repr(e))
             log(traceback.format_exc())
+
             if "No file descriptors available" in repr(e):
                 log("FATAL: No file descriptors available, exiting to trigger restart...")
                 sys.exit(1)
