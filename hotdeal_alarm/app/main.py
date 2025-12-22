@@ -354,6 +354,7 @@ def scrape_mall_url(site: str, url: str) -> str:
     if not regex:
         return ""
 
+
     full = url if url.startswith("http") else (get_url_prefix(site) + url)
     text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
     if not text:
