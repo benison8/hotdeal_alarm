@@ -93,25 +93,77 @@ def make_requests_session() -> requests.Session:
     return s
 
 
+# 전역 세션/스크레이퍼(매 사이클 생성 금지)
+_GLOBAL_SESS: requests.Session | None = None
+_GLOBAL_SCRAPER = None
+
+
+def get_global_sess() -> requests.Session:
+    global _GLOBAL_SESS
+    if _GLOBAL_SESS is None:
+        _GLOBAL_SESS = make_requests_session()
+    return _GLOBAL_SESS
+
+
+def get_global_scraper():
+    global _GLOBAL_SCRAPER
+    if _GLOBAL_SCRAPER is None:
+        _GLOBAL_SCRAPER = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "android", "desktop": False}
+        )
+    return _GLOBAL_SCRAPER
+
+
+def recreate_global_scraper():
+    global _GLOBAL_SCRAPER
+    _GLOBAL_SCRAPER = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "android", "desktop": False}
+    )
+    return _GLOBAL_SCRAPER
+
+
+def recreate_global_sess():
+    global _GLOBAL_SESS
+    try:
+        if _GLOBAL_SESS is not None:
+            _GLOBAL_SESS.close()
+    except Exception:
+        pass
+    _GLOBAL_SESS = make_requests_session()
+    return _GLOBAL_SESS
+
+
 def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
     try:
         if use_cloudscraper:
-            sc = cloudscraper.create_scraper(
-                browser={"browser": "chrome", "platform": "android", "desktop": False}
-            )
+            sc = get_global_scraper()
             return sc.get(url, timeout=20).text
 
-        sess = make_requests_session()
-        try:
-            return sess.get(url, timeout=20).text
-        finally:
-            try:
-                sess.close()
-            except Exception:
-                pass
+        sess = get_global_sess()
+        return sess.get(url, timeout=20).text
 
-    except (requests.exceptions.RequestException, OSError) as e:
+    except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
+        # 세션 쪽 오류면 세션 재생성 후 한 번 재시도
+        log("WARN: http_get_text session error:", url, "err=", repr(e))
+        time.sleep(1)
+        try:
+            sess = recreate_global_sess()
+            return sess.get(url, timeout=20).text
+        except Exception as e2:
+            log("WARN: http_get_text retry failed:", url, "err=", repr(e2))
+            return ""
+
+    except Exception as e:
+        # cloudscraper 쪽 오류면 scraper 재생성 후 한 번 재시도
         log("WARN: http_get_text failed:", url, "err=", repr(e))
+        if use_cloudscraper:
+            time.sleep(1)
+            try:
+                sc = recreate_global_scraper()
+                return sc.get(url, timeout=20).text
+            except Exception as e2:
+                log("WARN: http_get_text cloudscraper retry failed:", url, "err=", repr(e2))
+                return ""
         return ""
 
 
@@ -155,45 +207,17 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
 def scrape_board_items(cfg: Dict) -> List[Dict]:
     out: List[Dict] = []
 
-    sess = make_requests_session()
-
     def safe_get_text(url: str) -> str:
-        nonlocal sess
         try:
-            return sess.get(url, timeout=20).text
-        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
-            log("WARN: recreate session due to:", repr(e))
-            try:
-                sess.close()
-            except Exception:
-                pass
-            time.sleep(1)
-            sess = make_requests_session()
-            try:
-                return sess.get(url, timeout=20).text
-            except Exception as e2:
-                log("WARN: retry failed:", repr(e2))
-                return ""
-
-    scraper = cloudscraper.create_scraper(
-        browser={"browser": "chrome", "platform": "android", "desktop": False}
-    )
+            return http_get_text(url, use_cloudscraper=False)
+        except Exception:
+            return ""
 
     def safe_cloud_get_text(url: str) -> str:
-        nonlocal scraper
         try:
-            return scraper.get(url, timeout=20).text
-        except Exception as e:
-            log("WARN: cloudscraper failed, recreate scraper:", repr(e))
-            time.sleep(1)
-            try:
-                scraper = cloudscraper.create_scraper(
-                    browser={"browser": "chrome", "platform": "android", "desktop": False}
-                )
-                return scraper.get(url, timeout=20).text
-            except Exception as e2:
-                log("WARN: cloudscraper retry failed:", repr(e2))
-                return ""
+            return http_get_text(url, use_cloudscraper=True)
+        except Exception:
+            return ""
 
     # ppomppu
     if cfg.get("use_site_ppomppu"):
@@ -241,21 +265,17 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in re.finditer(regex, text, re.MULTILINE):
                 out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # coolenjoy (추가)
+    # coolenjoy
     if cfg.get("use_site_coolenjoy"):
         boards = ["jirum"]
         for board in boards:
             if not cfg.get(f"use_board_coolenjoy_{board}"):
                 continue
-
-            # 정규식은 사용자 제공 그대로 유지
             regex = r'<td class=\"td_subject\">\s+<a href=\"(?P<url>.+)\">\s+(?:<font color=.+?>)?(?P<title>.+?)(?:</font>)?\s+<span class=\"sound_only\"'
             url = f"https://coolenjoy.net/bbs/{board}"
-
             text = safe_get_text(url)
             if not text:
                 continue
-
             for m in re.finditer(regex, text, re.MULTILINE):
                 u = m.group("url")
                 out.append({
@@ -270,8 +290,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-
-            # 정규식은 사용자 제공 그대로 유지
             quasar_regex = r'<p class=\"tit\">\s+<a href=\"(?P<url>.+)\"\s+class=.+>\s+.+\s+(?:<span class=\"ellipsis-with-reply-cnt\">)?(?P<title>.+?)(?:</span>)'
 
             text = safe_cloud_get_text(url)
@@ -319,11 +337,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         "title": m.group("title"),
                         "url": "https://quasarzone.com" + u if u.startswith("/") else u
                     })
-
-    try:
-        sess.close()
-    except Exception:
-        pass
 
     return out
 
