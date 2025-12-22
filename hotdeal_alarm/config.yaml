@@ -1,6 +1,6 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.1.9"
+version: "1.1.10"
 description: "핫딜 게시판 모니터링 + 알림(텔레그램/디스코드/HA)"
 arch: [amd64, aarch64, armv7]
 startup: services
@@ -46,7 +46,7 @@ options:
   use_hotdeal_keyword_alarm_dist: false
   hotdeal_alarm_keyword: ""
 
-  alarm_message_template: "`{title}`\n{url}\n{mall_url}"
+  alarm_message_template: "`{title}` {url} {mall_url}"
 
   # 텔레그램
   telegram_enable: false
