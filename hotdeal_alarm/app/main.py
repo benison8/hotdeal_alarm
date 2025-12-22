@@ -341,7 +341,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
-        regex = r'div class=wordfix>링크:\s+(?P<mall_url>[^<]+)'
+        regex = r'<li class=\"topTitle-link partner\">.+?<a href=\"(?P<mall_url>https?://[^\"]+)\"'
     elif site == "clien":
         regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
     elif site == "ruriweb":
@@ -359,38 +359,11 @@ def scrape_mall_url(site: str, url: str) -> str:
     if not text:
         return ""
 
-    # 1) 원본 그대로 1차 시도
-    m = re.search(regex, text, re.MULTILINE)
-    if m:
-        return html.unescape(m.group("mall_url")).strip()
-
-    # 2) 실패 시: 정규식은 그대로 두고, HTML을 정규식 친화적으로 "정리"만 함
-    try:
-        norm = text
-
-        # (a) HTML 엔티티 해제(예: &quot; 등) -> 실제 따옴표로
-        norm = html.unescape(norm)
-
-        # (b) 뽐뿌 케이스 대응: class="wordfix" -> class=wordfix 로 보이게
-        #     (정규식은 'div class=wordfix>'만 기대하므로)
-        norm = norm.replace('"', "")
-
-        # (c) 태그 경계 주변 공백/개행 정리: >   \n   텍스트  같은 형태를 정돈
-        norm = re.sub(r"[\r\n\t]+", " ", norm)
-        norm = re.sub(r">\s+", ">", norm)
-        norm = re.sub(r"\s+<", "<", norm)
-        norm = re.sub(r"\s{2,}", " ", norm)
-
-        # 2차 재시도(정규식 동일)
-        m2 = re.search(regex, norm, re.MULTILINE)
-        if m2:
-            return html.unescape(m2.group("mall_url")).strip()
-
-    except Exception as e:
-        log("WARN: normalize mall_url failed:", site, full, "err=", repr(e))
+    m = re.search(regex, text, re.MULTILINE | re.DOTALL)
+    if not m:
         return ""
 
-    return ""
+    return html.unescape(m.group("mall_url")).strip()
 
 
 
