@@ -145,10 +145,18 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
     try:
         if use_cloudscraper:
             sc = get_global_scraper()
-            return sc.get(url, timeout=20).text
-
-        sess = get_global_sess()
-        return sess.get(url, timeout=20).text
+            res = sc.get(url, timeout=20)
+        else:
+            sess = get_global_sess()
+            res = sess.get(url, timeout=20)
+        
+        # 뽐뿌일 경우 인코딩을 강제로 euc-kr로 설정해주는 로직 추가
+        if "ppomppu.co.kr" in url:
+            res.encoding = 'euc-kr'
+        else:
+            res.encoding = res.apparent_encoding # 그 외엔 자동 추측
+            
+        return res.text
 
     except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
         log("WARN: http_get_text session error:", url, "err=", repr(e))
@@ -371,7 +379,8 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
-        regex = r'<li class=\"topTitle-link partner\">.+?<a href=\"(?P<mall_url>https?://[^\"]+)\"'
+         # 클래스 이름에 'topTitle-link'가 포함된 li 안의 href를 찾는 방식
+        regex = r'class=\"[^\"]*topTitle-link[^\"]*\".*?href=\"(?P<mall_url>https?://[^\"]+)\"'
     elif site == "clien":
         regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
     elif site == "ruriweb":
