@@ -174,9 +174,12 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
 
 
 def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
-    if not keep_keys:
-        return
-
+    """
+    seen: LRU처럼 최근 N개만 유지 (N = max(keep_min, ceil(len(keep_keys) * keep_factor)))
+          값은 True 또는 timestamp(float) 둘 다 허용.
+    mall_cache/fail_count: 기존처럼 keep_keys 기반으로만 정리(용량 관리 목적).
+    """
+    # N 계산은 기존 설정(keep_factor/keep_min/len(keep_keys))을 그대로 활용
     try:
         factor = float(keep_factor)
     except Exception:
@@ -187,27 +190,40 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
     except Exception:
         km = 50
 
-    limit = max(km, int(math.ceil(len(keep_keys) * max(1.0, factor))))
+    base = len(keep_keys) if keep_keys else 0
+    limit = max(km, int(math.ceil(base * max(1.0, factor))))
 
-    recent = []
-    seen_set = set()
-    for k in keep_keys:
-        if k in seen_set:
-            continue
-        recent.append(k)
-        seen_set.add(k)
-        if len(recent) >= limit:
-            break
+    # 1) seen: timestamp 기반 LRU trim
+    seen = state.get("seen")
+    if isinstance(seen, dict) and seen:
+        # 값이 True인 과거 데이터도 섞여 있을 수 있으니 timestamp로 정규화
+        # - 숫자면 그대로 사용
+        # - True/기타면 0으로 취급(가장 오래된 것으로 간주되어 먼저 정리됨)
+        items = []
+        for k, v in seen.items():
+            ts = v if isinstance(v, (int, float)) else 0
+            items.append((k, ts))
 
-    keep = set(recent)
+        # 최신 순으로 limit개 유지
+        items.sort(key=lambda x: x[1], reverse=True)
+        keep_seen = set(k for k, _ in items[:limit])
 
-    for bucket in ("seen", "mall_cache", "fail_count"):
+        for k in list(seen.keys()):
+            if k not in keep_seen:
+                del seen[k]
+
+    # 2) mall_cache/fail_count: 기존 정책 유지(현재 페이지 기반)
+    # keep_keys가 없으면 과감히 비움(메모리 보호)
+    keep = set(keep_keys) if keep_keys else set()
+
+    for bucket in ("mall_cache", "fail_count"):
         d = state.get(bucket)
         if not isinstance(d, dict) or not d:
             continue
         for k in list(d.keys()):
             if k not in keep:
                 del d[k]
+
 
 
 def scrape_board_items(cfg: Dict) -> List[Dict]:
@@ -558,7 +574,7 @@ def main():
                     sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
 
                 if sent_any:
-                    state["seen"][key] = True
+                    state["seen"][key] = time.time()
                     if key in state["fail_count"]:
                         del state["fail_count"][key]
                     save_state(state)
@@ -568,7 +584,7 @@ def main():
                     state["fail_count"][key] = cur
                     # (max_fail에 도달하면 seen 처리)
                     if max_fail > 0 and cur >= max_fail:
-                        state["seen"][key] = True
+                        state["seen"][key] = time.time()
                         del state["fail_count"][key]
                     save_state(state)
 
