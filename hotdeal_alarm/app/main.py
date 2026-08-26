@@ -62,8 +62,13 @@ def get_url_prefix(site_name: str) -> str:
 def clean_html_title(text: str) -> str:
     if not text:
         return ""
+    # 쿨엔조이/그 외 게시판의 스크린리더용 태그 제거
+    text = re.sub(r'<span[^>]*class="[^"]*sound_only[^"]*"[^>]*>[\s\S]*?</span>', '', text)
+    # 모든 잔여 HTML 태그 제거
     text = re.sub(r"<[^>]+>", "", text)
-    return html.unescape(text).strip()
+    # HTML 엔티티 디코딩 및 다중 공백 정리
+    text = html.unescape(text)
+    return " ".join(text.split()).strip()
 
 
 def load_config() -> Dict:
@@ -234,7 +239,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     def safe_cloud_get_text(url: str) -> str:
         return http_get_text(url, use_cloudscraper=True) or ""
 
-    # 1. ppomppu
+    # 1. ppomppu (뽐뿌)
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
         ppomppu_regex = r'<a[^>]*href="(?P<url>view\.php\?id=[^"]*?no=\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
@@ -250,8 +255,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 continue
 
             raw_matches = list(re.finditer(ppomppu_regex, text, re.MULTILINE))
-            log(f"DEBUG: ppomppu ({board}) regex matches (raw):", len(raw_matches))
-
             seen_urls = set()
             board_items = []
 
@@ -259,7 +262,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 u = html.unescape(m.group("url")).strip()
                 t = clean_html_title(m.group("title"))
 
-                # 썸네일 이미지 링크나 댓글 수 등 짧거나 빈 텍스트 제외
                 if not t or len(t) < 2 or u in seen_urls:
                     continue
                 seen_urls.add(u)
@@ -271,13 +273,17 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                     "url": u,
                 })
 
+            log(f"DEBUG: ppomppu ({board}) regex matches:", len(board_items))
+
             # 최상단 1개(공지/인기글) 스킵 처리
             if board_items:
                 out.extend(board_items[1:])
 
-    # 2. clien
+    # 2. clien (클리앙)
     if cfg.get("use_site_clien"):
-        clien_regex = r'<a[^>]*class="[^"]*list_subject[^"]*"[^>]*href="(?P<url>/service/(?:board|group)/[^"]+)"[^>]*>[\s\S]*?<span[^>]*class="subject_fixed"[^>]*title="(?P<title>[^"]+)"'
+        # jirum(알뜰구매)과 allsell(사고팔고) 모두 지원하도록 내부 태그 매칭
+        clien_regex = r'<a[^>]*href="(?P<url>/service/(?:board|group)/[^"]+/\d+[^"]*)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*subject_fixed[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>'
+
         for board in ["allsell", "jirum"]:
             if not cfg.get(f"use_board_clien_{board}"):
                 continue
@@ -288,20 +294,32 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             if not text:
                 continue
 
-            matches = list(re.finditer(clien_regex, text, re.MULTILINE))
-            log(f"DEBUG: clien ({board}) regex matches:", len(matches))
+            raw_matches = list(re.finditer(clien_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
 
-            for m in matches:
-                out.append({
+            for m in raw_matches:
+                u = m.group("url").strip()
+                t = clean_html_title(m.group("title"))
+                if not t or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
                     "site": "clien",
                     "board": board,
-                    "title": clean_html_title(m.group("title")),
-                    "url": m.group("url"),
+                    "title": t,
+                    "url": u,
                 })
 
-    # 3. ruriweb
+            log(f"DEBUG: clien ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    # 3. ruriweb (루리웹)
     if cfg.get("use_site_ruriweb"):
-        ruri_regex = r'<a[^>]*class="[^"]*subject_link[^"]*"[^>]*href="(?P<url>/market/board/\d+/read/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+        # 게시글 상세 링크 패턴 매칭 (/market/board/게시판/read/글번호)
+        ruri_regex = r'<a[^>]*href="(?P<url>(?:https?://bbs\.ruliweb\.com)?/market/board/\d+/read/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
         for board in ["1020", "600004"]:
             if not cfg.get(f"use_board_ruriweb_{board}"):
                 continue
@@ -312,21 +330,33 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             if not text:
                 continue
 
-            matches = list(re.finditer(ruri_regex, text, re.MULTILINE))
-            log(f"DEBUG: ruriweb ({board}) regex matches:", len(matches))
+            raw_matches = list(re.finditer(ruri_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
 
-            for m in matches:
-                out.append({
+            for m in raw_matches:
+                u = m.group("url").strip()
+                t = clean_html_title(m.group("title"))
+                # 댓글 링크나 빈 텍스트 제외
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
                     "site": "ruriweb",
                     "board": board,
-                    "title": clean_html_title(m.group("title")),
-                    "url": m.group("url"),
+                    "title": t,
+                    "url": u,
                 })
 
-    # 4. coolenjoy
+            log(f"DEBUG: ruriweb ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    # 4. coolenjoy (쿨엔조이)
     if cfg.get("use_site_coolenjoy"):
         boards = ["jirum"]
-        cool_regex = r'<td[^>]*class="[^"]*td_subject[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(?P<url>(?:https?://coolenjoy\.net)?/bbs/[^"]+|\./[^"]+)"[^>]*>(?P<title>[\s\S]*?)</a>'
+        cool_regex = r'<a[^>]*href="(?P<url>(?:https?://coolenjoy\.net)?/bbs/jirum/\d+[^"]*|\./\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
         for board in boards:
             if not cfg.get(f"use_board_coolenjoy_{board}"):
                 continue
@@ -337,23 +367,33 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             if not text:
                 continue
 
-            matches = list(re.finditer(cool_regex, text, re.MULTILINE))
-            log(f"DEBUG: coolenjoy ({board}) regex matches:", len(matches))
+            raw_matches = list(re.finditer(cool_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
 
-            for m in matches:
-                u = m.group("url")
+            for m in raw_matches:
+                u = m.group("url").strip()
                 if u.startswith("./"):
-                    u = f"https://coolenjoy.net/bbs/{u[2:]}"
+                    u = f"https://coolenjoy.net/bbs/jirum/{u[2:]}"
                 elif u.startswith("/"):
                     u = "https://coolenjoy.net" + u
-                out.append({
+
+                t = clean_html_title(m.group("title"))
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
                     "site": "coolenjoy",
                     "board": board,
-                    "title": clean_html_title(m.group("title")),
+                    "title": t,
                     "url": u,
                 })
 
-    # 5. quasarzone
+            log(f"DEBUG: coolenjoy ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    # 5. quasarzone (퀘이사존)
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
@@ -416,7 +456,7 @@ def scrape_mall_url(site: str, url: str) -> str:
     elif site == "clien":
         regex = r'class="[^"]*outlink[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "ruriweb":
-        regex = r'class="[^"]*source_url[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
+        regex = r'class="[^"]*(?:source_url|url)[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "coolenjoy":
         regex = r'alt="관련링크"[^>]*>[\s\S]*?<a[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "quasarzone":
