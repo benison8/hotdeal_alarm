@@ -281,8 +281,8 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
     # 2. clien (클리앙)
     if cfg.get("use_site_clien"):
-        # jirum(알뜰구매)과 allsell(사고팔고) 모두 지원하도록 내부 태그 매칭
-        clien_regex = r'<a[^>]*href="(?P<url>/service/(?:board|group)/[^"]+/\d+[^"]*)"[^>]*>[\s\S]*?<span[^>]*class="[^"]*subject_fixed[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>'
+        # jirum(알뜰구매)의 리스트/갤러리 레이아웃 및 allsell(사고팔고) 모두 지원
+        clien_regex = r'<a[^>]*href="(?P<url>/service/(?:board|group)/[^"]+/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
 
         for board in ["allsell", "jirum"]:
             if not cfg.get(f"use_board_clien_{board}"):
@@ -301,7 +301,7 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in raw_matches:
                 u = m.group("url").strip()
                 t = clean_html_title(m.group("title"))
-                if not t or u in seen_urls:
+                if not t or len(t) < 2 or u in seen_urls:
                     continue
                 seen_urls.add(u)
 
@@ -317,7 +317,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 
     # 3. ruriweb (루리웹)
     if cfg.get("use_site_ruriweb"):
-        # 게시글 상세 링크 패턴 매칭 (/market/board/게시판/read/글번호)
         ruri_regex = r'<a[^>]*href="(?P<url>(?:https?://bbs\.ruliweb\.com)?/market/board/\d+/read/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
 
         for board in ["1020", "600004"]:
@@ -337,7 +336,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             for m in raw_matches:
                 u = m.group("url").strip()
                 t = clean_html_title(m.group("title"))
-                # 댓글 링크나 빈 텍스트 제외
                 if not t or len(t) < 2 or u in seen_urls:
                     continue
                 seen_urls.add(u)
