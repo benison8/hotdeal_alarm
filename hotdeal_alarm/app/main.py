@@ -237,7 +237,8 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     # 1. ppomppu
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'<a[^>]*href="(?P<url>view\.php\?id=[^"]+)"[^>]*>[\s\S]*?<[a-zA-Z]+[^>]*class="list_title"[^>]*>(?P<title>[\s\S]*?)</[a-zA-Z]+>'
+        ppomppu_regex = r'<a[^>]*href="(?P<url>view\.php\?id=[^"]*?no=\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
@@ -248,17 +249,31 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
             if not text:
                 continue
 
-            matches = list(re.finditer(ppomppu_regex, text, re.MULTILINE))
-            log(f"DEBUG: ppomppu ({board}) regex matches (raw):", len(matches))
+            raw_matches = list(re.finditer(ppomppu_regex, text, re.MULTILINE))
+            log(f"DEBUG: ppomppu ({board}) regex matches (raw):", len(raw_matches))
 
-            # 최상단 1개(공지/인기글) 스킵 처리
-            for m in matches[1:]:
-                out.append({
+            seen_urls = set()
+            board_items = []
+
+            for m in raw_matches:
+                u = html.unescape(m.group("url")).strip()
+                t = clean_html_title(m.group("title"))
+
+                # 썸네일 이미지 링크나 댓글 수 등 짧거나 빈 텍스트 제외
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
                     "site": "ppomppu",
                     "board": board,
-                    "title": clean_html_title(m.group("title")),
-                    "url": m.group("url"),
+                    "title": t,
+                    "url": u,
                 })
+
+            # 최상단 1개(공지/인기글) 스킵 처리
+            if board_items:
+                out.extend(board_items[1:])
 
     # 2. clien
     if cfg.get("use_site_clien"):
