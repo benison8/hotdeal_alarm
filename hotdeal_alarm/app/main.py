@@ -59,6 +59,13 @@ def get_url_prefix(site_name: str) -> str:
     return ""
 
 
+def clean_html_title(text: str) -> str:
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", "", text)
+    return html.unescape(text).strip()
+
+
 def load_config() -> Dict:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -101,7 +108,7 @@ def make_requests_session() -> requests.Session:
     return s
 
 
-# 전역 세션/스크레이퍼(매 사이클 생성 금지)
+# 전역 세션/스크레이퍼
 _GLOBAL_SESS: requests.Session | None = None
 _GLOBAL_SCRAPER = None
 
@@ -149,13 +156,12 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
         else:
             sess = get_global_sess()
             res = sess.get(url, timeout=20)
-        
-        # 뽐뿌일 경우 인코딩을 강제로 euc-kr로 설정해주는 로직 추가
+
         if "ppomppu.co.kr" in url:
-            res.encoding = 'euc-kr'
+            res.encoding = "euc-kr"
         else:
-            res.encoding = res.apparent_encoding # 그 외엔 자동 추측
-            
+            res.encoding = res.apparent_encoding
+
         return res.text
 
     except (requests.exceptions.SSLError, requests.exceptions.ConnectionError, OSError) as e:
@@ -182,12 +188,6 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
 
 
 def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
-    """
-    seen: LRU처럼 최근 N개만 유지 (N = max(keep_min, ceil(len(keep_keys) * keep_factor)))
-          값은 True 또는 timestamp(float) 둘 다 허용.
-    mall_cache/fail_count: 기존처럼 keep_keys 기반으로만 정리(용량 관리 목적).
-    """
-    # N 계산은 기존 설정(keep_factor/keep_min/len(keep_keys))을 그대로 활용
     try:
         factor = float(keep_factor)
     except Exception:
@@ -201,18 +201,13 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
     base = len(keep_keys) if keep_keys else 0
     limit = max(km, int(math.ceil(base * max(1.0, factor))))
 
-    # 1) seen: timestamp 기반 LRU trim
     seen = state.get("seen")
     if isinstance(seen, dict) and seen:
-        # 값이 True인 과거 데이터도 섞여 있을 수 있으니 timestamp로 정규화
-        # - 숫자면 그대로 사용
-        # - True/기타면 0으로 취급(가장 오래된 것으로 간주되어 먼저 정리됨)
         items = []
         for k, v in seen.items():
             ts = v if isinstance(v, (int, float)) else 0
             items.append((k, ts))
 
-        # 최신 순으로 limit개 유지
         items.sort(key=lambda x: x[1], reverse=True)
         keep_seen = set(k for k, _ in items[:limit])
 
@@ -220,10 +215,7 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
             if k not in keep_seen:
                 del seen[k]
 
-    # 2) mall_cache/fail_count: 기존 정책 유지(현재 페이지 기반)
-    # keep_keys가 없으면 과감히 비움(메모리 보호)
     keep = set(keep_keys) if keep_keys else set()
-
     for bucket in ("mall_cache", "fail_count"):
         d = state.get(bucket)
         if not isinstance(d, dict) or not d:
@@ -231,7 +223,6 @@ def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: floa
         for k in list(d.keys()):
             if k not in keep:
                 del d[k]
-
 
 
 def scrape_board_items(cfg: Dict) -> List[Dict]:
@@ -243,88 +234,119 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
     def safe_cloud_get_text(url: str) -> str:
         return http_get_text(url, use_cloudscraper=True) or ""
 
-    # ppomppu (최상단 1개 스킵)
+    # 1. ppomppu
     if cfg.get("use_site_ppomppu"):
         boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
-        ppomppu_regex = r'title[\"\'] href=\"(?P<url>view\.php.+?)\"\s*>.+>(?P<title>.+)</span></a>'
+        ppomppu_regex = r'<a[^>]*href="(?P<url>view\.php\?id=[^"]+)"[^>]*>[\s\S]*?<[a-zA-Z]+[^>]*class="list_title"[^>]*>(?P<title>[\s\S]*?)</[a-zA-Z]+>'
         for board in boards:
             if not cfg.get(f"use_board_ppomppu_{board}"):
                 continue
 
             url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
             text = safe_get_text(url)
+            log(f"DEBUG: ppomppu ({board}) list html length:", len(text))
             if not text:
                 continue
 
-            skip_first = True
-            for m in re.finditer(ppomppu_regex, text, re.MULTILINE):
-                if skip_first:
-                    skip_first = False
-                    continue
-                out.append({"site": "ppomppu", "board": board, "title": m.group("title"), "url": m.group("url")})
+            matches = list(re.finditer(ppomppu_regex, text, re.MULTILINE))
+            log(f"DEBUG: ppomppu ({board}) regex matches (raw):", len(matches))
 
-    # clien
+            # 최상단 1개(공지/인기글) 스킵 처리
+            for m in matches[1:]:
+                out.append({
+                    "site": "ppomppu",
+                    "board": board,
+                    "title": clean_html_title(m.group("title")),
+                    "url": m.group("url"),
+                })
+
+    # 2. clien
     if cfg.get("use_site_clien"):
+        clien_regex = r'<a[^>]*class="[^"]*list_subject[^"]*"[^>]*href="(?P<url>/service/(?:board|group)/[^"]+)"[^>]*>[\s\S]*?<span[^>]*class="subject_fixed"[^>]*title="(?P<title>[^"]+)"'
         for board in ["allsell", "jirum"]:
             if not cfg.get(f"use_board_clien_{board}"):
                 continue
-            if board == "allsell":
-                regex = r'class=\"list_subject\" href=\"(?P<url>.+?)\" .+\s+.+\s+.+?data-role=\"list-title-text\"\stitle=\"(?P<title>.+?)\"'
-                url = f"https://www.clien.net/service/group/{board}"
-            else:
-                regex = r'href=\"(?P<url>/service/board/jirum/\d+)[^\"]*\"[^>]*>[^<]*<span[^>]*class=\"subject_fixed\"[^>]*>(?P<title>[^<]+)</span>'
-                url = f"https://www.clien.net/service/board/{board}"
 
+            url = f"https://www.clien.net/service/group/{board}" if board == "allsell" else f"https://www.clien.net/service/board/{board}"
             text = safe_get_text(url)
+            log(f"DEBUG: clien ({board}) list html length:", len(text))
             if not text:
                 continue
-            for m in re.finditer(regex, text, re.MULTILINE):
-                out.append({"site": "clien", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # ruriweb
+            matches = list(re.finditer(clien_regex, text, re.MULTILINE))
+            log(f"DEBUG: clien ({board}) regex matches:", len(matches))
+
+            for m in matches:
+                out.append({
+                    "site": "clien",
+                    "board": board,
+                    "title": clean_html_title(m.group("title")),
+                    "url": m.group("url"),
+                })
+
+    # 3. ruriweb
     if cfg.get("use_site_ruriweb"):
+        ruri_regex = r'<a[^>]*class="[^"]*subject_link[^"]*"[^>]*href="(?P<url>/market/board/\d+/read/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
         for board in ["1020", "600004"]:
             if not cfg.get(f"use_board_ruriweb_{board}"):
                 continue
+
             url = f"https://bbs.ruliweb.com/market/board/{board}"
             text = safe_get_text(url)
+            log(f"DEBUG: ruriweb ({board}) list html length:", len(text))
             if not text:
                 continue
-            regex = r'href=\"(?P<url>/market/board/\d+/read/\d+)[^\"]*\"[^>]*>(?P<title>[^<]+)</a>'
-            for m in re.finditer(regex, text, re.MULTILINE):
-                out.append({"site": "ruriweb", "board": board, "title": m.group("title"), "url": m.group("url")})
 
-    # coolenjoy
+            matches = list(re.finditer(ruri_regex, text, re.MULTILINE))
+            log(f"DEBUG: ruriweb ({board}) regex matches:", len(matches))
+
+            for m in matches:
+                out.append({
+                    "site": "ruriweb",
+                    "board": board,
+                    "title": clean_html_title(m.group("title")),
+                    "url": m.group("url"),
+                })
+
+    # 4. coolenjoy
     if cfg.get("use_site_coolenjoy"):
         boards = ["jirum"]
+        cool_regex = r'<td[^>]*class="[^"]*td_subject[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(?P<url>(?:https?://coolenjoy\.net)?/bbs/[^"]+|\./[^"]+)"[^>]*>(?P<title>[\s\S]*?)</a>'
         for board in boards:
             if not cfg.get(f"use_board_coolenjoy_{board}"):
                 continue
-            regex = r'<td class=\"td_subject\">\s+<a href=\"(?P<url>.+)\">\s+(?:<font color=.+?>)?(?P<title>.+?)(?:</font>)?\s+<span class=\"sound_only\"'
+
             url = f"https://coolenjoy.net/bbs/{board}"
             text = safe_get_text(url)
+            log(f"DEBUG: coolenjoy ({board}) list html length:", len(text))
             if not text:
                 continue
-            for m in re.finditer(regex, text, re.MULTILINE):
-                u = m.group("url")
-                out.append(
-                    {
-                        "site": "coolenjoy",
-                        "board": board,
-                        "title": m.group("title"),
-                        "url": "https://coolenjoy.net" + u if u.startswith("/") else u,
-                    }
-                )
 
-    # quasarzone
+            matches = list(re.finditer(cool_regex, text, re.MULTILINE))
+            log(f"DEBUG: coolenjoy ({board}) regex matches:", len(matches))
+
+            for m in matches:
+                u = m.group("url")
+                if u.startswith("./"):
+                    u = f"https://coolenjoy.net/bbs/{u[2:]}"
+                elif u.startswith("/"):
+                    u = "https://coolenjoy.net" + u
+                out.append({
+                    "site": "coolenjoy",
+                    "board": board,
+                    "title": clean_html_title(m.group("title")),
+                    "url": u,
+                })
+
+    # 5. quasarzone
     if cfg.get("use_site_quasarzone"):
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-            quasar_regex = r'<p class=\"tit\">\s+<a href=\"(?P<url>.+)\"\s+class=.+>\s+.+\s+(?:<span class=\"ellipsis-with-reply-cnt\">)?(?P<title>.+?)(?:</span>)'
+            quasar_regex = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>[\s\S]*?<span[^>]*class="ellipsis-with-reply-cnt"[^>]*>(?P<title>[\s\S]*?)</span>'
 
             text = safe_cloud_get_text(url)
-            log("DEBUG: quasarzone list html length (cloudscraper):", len(text))
+            log("DEBUG: quasarzone (qb_saleinfo) list html length (cloudscraper):", len(text))
 
             matches = []
             if text:
@@ -334,23 +356,21 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                     log("WARN: quasarzone regex error:", repr(e))
                     matches = []
 
-            log("DEBUG: quasarzone regex matches (cloudscraper):", len(matches))
+            log("DEBUG: quasarzone (qb_saleinfo) regex matches (cloudscraper):", len(matches))
 
             for m in matches:
                 u = m.group("url")
-                out.append(
-                    {
-                        "site": "quasarzone",
-                        "board": board,
-                        "title": m.group("title"),
-                        "url": "https://quasarzone.com" + u if u.startswith("/") else u,
-                    }
-                )
+                out.append({
+                    "site": "quasarzone",
+                    "board": board,
+                    "title": clean_html_title(m.group("title")),
+                    "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                })
 
             if (not text) or (len(matches) == 0):
                 log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
                 text2 = http_get_text(url, use_cloudscraper=True)
-                log("DEBUG: quasarzone list html length (fallback):", len(text2))
+                log("DEBUG: quasarzone (qb_saleinfo) list html length (fallback):", len(text2))
 
                 matches2 = []
                 if text2:
@@ -360,18 +380,16 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         log("WARN: quasarzone regex error (fallback):", repr(e))
                         matches2 = []
 
-                log("DEBUG: quasarzone regex matches (fallback):", len(matches2))
+                log("DEBUG: quasarzone (qb_saleinfo) regex matches (fallback):", len(matches2))
 
                 for m in matches2:
                     u = m.group("url")
-                    out.append(
-                        {
-                            "site": "quasarzone",
-                            "board": board,
-                            "title": m.group("title"),
-                            "url": "https://quasarzone.com" + u if u.startswith("/") else u,
-                        }
-                    )
+                    out.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": clean_html_title(m.group("title")),
+                        "url": "https://quasarzone.com" + u if u.startswith("/") else u,
+                    })
 
     return out
 
@@ -379,16 +397,15 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
 def scrape_mall_url(site: str, url: str) -> str:
     regex = None
     if site == "ppomppu":
-         # 클래스 이름에 'topTitle-link'가 포함된 li 안의 href를 찾는 방식
-        regex = r'class=\"[^\"]*topTitle-link[^\"]*\".*?href=\"(?P<mall_url>https?://[^\"]+)\"'
+        regex = r'class="[^"]*topTitle-link[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "clien":
-        regex = r'구매링크.+?>(?P<mall_url>[^<]+)<'
+        regex = r'class="[^"]*outlink[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "ruriweb":
-        regex = r'원본출처.+?(?P<mall_url>https?://[^\s\"<]+)'
+        regex = r'class="[^"]*source_url[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "coolenjoy":
-        regex = r'alt=\"관련링크\">\s+(?P<mall_url>[^<]+)<'
+        regex = r'alt="관련링크"[^>]*>[\s\S]*?<a[^>]*href="(?P<mall_url>https?://[^"]+)"'
     elif site == "quasarzone":
-        regex = r'<th>\s*링크.+?</th>\s*<td>\s*<a[^>]*>(?P<mall_url>https?://[^<\s]+)</a>'
+        regex = r'<th>\s*링크\s*</th>[\s\S]*?<td>[\s\S]*?<a[^>]*href="(?P<mall_url>https?://[^"]+)"'
 
     if not regex:
         return ""
@@ -398,7 +415,7 @@ def scrape_mall_url(site: str, url: str) -> str:
     if not text:
         return ""
 
-    m = re.search(regex, text, re.MULTILINE | re.DOTALL)
+    m = re.search(regex, text, re.MULTILINE)
     if not m:
         return ""
 
@@ -545,12 +562,11 @@ def main():
 
                 mall_url = ""
                 if wants_detail:
-                    # mall_url은 실패해도 게시물 주소(key) 기준으로 한 번만 시도(빈 값도 저장)
                     if key in state["mall_cache"]:
                         mall_url = state["mall_cache"].get(key, "")
                     else:
-                        mall_url = scrape_mall_url(site, raw_url)   # <= 정규식은 그대로 scrape_mall_url() 안에 있음
-                        state["mall_cache"][key] = mall_url         # 빈 값도 저장
+                        mall_url = scrape_mall_url(site, raw_url)
+                        state["mall_cache"][key] = mall_url
 
                 if not (send_main or send_dist):
                     continue
@@ -588,10 +604,8 @@ def main():
                         del state["fail_count"][key]
                     save_state(state)
                 else:
-                    # 실패 횟수 카운트
                     cur = int(state["fail_count"].get(key, 0)) + 1
                     state["fail_count"][key] = cur
-                    # (max_fail에 도달하면 seen 처리)
                     if max_fail > 0 and cur >= max_fail:
                         state["seen"][key] = time.time()
                         del state["fail_count"][key]
