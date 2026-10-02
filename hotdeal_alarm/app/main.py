@@ -396,7 +396,8 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-            quasar_regex = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>[\s\S]*?<span[^>]*class="ellipsis-with-reply-cnt"[^>]*>(?P<title>[\s\S]*?)</span>'
+            # 개선된 정규식: <a> 태그의 범위를 정확히 제한하고 class 속성에 "ellipsis-with-reply-cnt"가 포함된 span만 매칭
+            quasar_regex = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?![\s\S]*?<a)[^<]*<span[^>]*class="[^"]*ellipsis-with-reply-cnt[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>[\s\S]*?</a>'
 
             text = safe_cloud_get_text(url)
             log("DEBUG: quasarzone (qb_saleinfo) list html length (cloudscraper):", len(text))
@@ -425,10 +426,12 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 text2 = http_get_text(url, use_cloudscraper=True)
                 log("DEBUG: quasarzone (qb_saleinfo) list html length (fallback):", len(text2))
 
+                quasar_regex_fallback = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?![\s\S]*?<a)[^<]*<span[^>]*class="[^"]*ellipsis-with-reply-cnt[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>[\s\S]*?</a>'
+
                 matches2 = []
                 if text2:
                     try:
-                        matches2 = list(re.finditer(quasar_regex, text2, re.MULTILINE))
+                        matches2 = list(re.finditer(quasar_regex_fallback, text2, re.MULTILINE))
                     except Exception as e:
                         log("WARN: quasarzone regex error (fallback):", repr(e))
                         matches2 = []
