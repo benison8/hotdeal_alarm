@@ -396,56 +396,84 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
         board = "qb_saleinfo"
         if cfg.get("use_board_quasarzone_qb_saleinfo"):
             url = f"https://quasarzone.com/bbs/{board}"
-            # 개선된 정규식: <a> 태그의 범위를 정확히 제한하고 class 속성에 "ellipsis-with-reply-cnt"가 포함된 span만 매칭
-            quasar_regex = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?![\s\S]*?<a)[^<]*<span[^>]*class="[^"]*ellipsis-with-reply-cnt[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>[\s\S]*?</a>'
+
+            def parse_quasarzone_items(html_text: str):
+                if not html_text:
+                    return []
+
+                items = []
+                seen = set()
+                url_regex = r'https?://quasarzone\.com/bbs/qb_saleinfo/views/\d+|/bbs/qb_saleinfo/views/\d+'
+
+                for m in re.finditer(url_regex, html_text):
+                    raw_url = m.group(0)
+                    full_url = raw_url if raw_url.startswith("http") else ("https://quasarzone.com" + raw_url)
+
+                    context_start = max(0, m.start() - 200)
+                    context_end = min(len(html_text), m.end() + 800)
+                    context = html_text[context_start:context_end]
+
+                    title = None
+                    title_match = re.search(r'\[\[(?P<title>[^\]]+)\]\]', context)
+                    if title_match:
+                        title = title_match.group("title")
+                    else:
+                        anchor_match = re.search(
+                            r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>',
+                            context,
+                            re.MULTILINE,
+                        )
+                        if anchor_match:
+                            title = anchor_match.group("title")
+                            full_url = "https://quasarzone.com" + anchor_match.group("url")
+
+                    title = clean_html_title(title) if title else ""
+                    if not title:
+                        continue
+                    if full_url in seen:
+                        continue
+                    seen.add(full_url)
+                    items.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": title,
+                        "url": full_url,
+                    })
+
+                # 구형 구조 호환
+                for m in re.finditer(r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>', html_text, re.MULTILINE):
+                    u = m.group("url")
+                    title = clean_html_title(m.group("title"))
+                    if not title:
+                        continue
+                    full_url = "https://quasarzone.com" + u if u.startswith("/") else u
+                    if full_url in seen:
+                        continue
+                    seen.add(full_url)
+                    items.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": title,
+                        "url": full_url,
+                    })
+
+                return items
 
             text = safe_cloud_get_text(url)
             log("DEBUG: quasarzone (qb_saleinfo) list html length (cloudscraper):", len(text))
-
-            matches = []
-            if text:
-                try:
-                    matches = list(re.finditer(quasar_regex, text, re.MULTILINE))
-                except Exception as e:
-                    log("WARN: quasarzone regex error:", repr(e))
-                    matches = []
-
-            log("DEBUG: quasarzone (qb_saleinfo) regex matches (cloudscraper):", len(matches))
-
-            for m in matches:
-                u = m.group("url")
-                out.append({
-                    "site": "quasarzone",
-                    "board": board,
-                    "title": clean_html_title(m.group("title")),
-                    "url": "https://quasarzone.com" + u if u.startswith("/") else u,
-                })
+            matches = parse_quasarzone_items(text)
+            log("DEBUG: quasarzone (qb_saleinfo) parse matches (cloudscraper):", len(matches))
+            for item in matches:
+                out.append(item)
 
             if (not text) or (len(matches) == 0):
                 log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
                 text2 = http_get_text(url, use_cloudscraper=True)
                 log("DEBUG: quasarzone (qb_saleinfo) list html length (fallback):", len(text2))
-
-                quasar_regex_fallback = r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?![\s\S]*?<a)[^<]*<span[^>]*class="[^"]*ellipsis-with-reply-cnt[^"]*"[^>]*>(?P<title>[\s\S]*?)</span>[\s\S]*?</a>'
-
-                matches2 = []
-                if text2:
-                    try:
-                        matches2 = list(re.finditer(quasar_regex_fallback, text2, re.MULTILINE))
-                    except Exception as e:
-                        log("WARN: quasarzone regex error (fallback):", repr(e))
-                        matches2 = []
-
-                log("DEBUG: quasarzone (qb_saleinfo) regex matches (fallback):", len(matches2))
-
-                for m in matches2:
-                    u = m.group("url")
-                    out.append({
-                        "site": "quasarzone",
-                        "board": board,
-                        "title": clean_html_title(m.group("title")),
-                        "url": "https://quasarzone.com" + u if u.startswith("/") else u,
-                    })
+                matches2 = parse_quasarzone_items(text2)
+                log("DEBUG: quasarzone (qb_saleinfo) parse matches (fallback):", len(matches2))
+                for item in matches2:
+                    out.append(item)
 
     return out
 
