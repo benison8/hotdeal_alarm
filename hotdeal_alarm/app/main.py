@@ -404,43 +404,35 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                 items = []
                 seen = set()
                 board = "qb_saleinfo"
-                
-                # 패턴 1: URL을 먼저 찾고 타이틀을 근처에서 추출
-                url_regex = r'https?://quasarzone\.com/bbs/qb_saleinfo/views/(\d+)|/bbs/qb_saleinfo/views/(\d+)'
+                url_regex = r'https?://quasarzone\.com/bbs/qb_saleinfo/views/\d+|/bbs/qb_saleinfo/views/\d+'
+
                 for m in re.finditer(url_regex, html_text):
-                    post_id = m.group(1) or m.group(2)
                     raw_url = m.group(0)
                     full_url = raw_url if raw_url.startswith("http") else ("https://quasarzone.com" + raw_url)
 
-                    # URL 주변에서 제목 찾기 (전후 500자)
-                    start_pos = max(0, m.start() - 500)
-                    end_pos = min(len(html_text), m.end() + 500)
-                    context = html_text[start_pos:end_pos]
+                    context_start = max(0, m.start() - 200)
+                    context_end = min(len(html_text), m.end() + 800)
+                    context = html_text[context_start:context_end]
 
                     title = None
-                    # Pattern 1: [[제목]] 형식
-                    title_match = re.search(r'\[\[([^\]]+)\]\]', context)
+                    title_match = re.search(r'\[\[(?P<title>[^\]]+)\]\]', context)
                     if title_match:
-                        title = title_match.group(1).strip()
-                    
-                    # Pattern 2: <a href="...">제목</a> 형식
-                    if not title:
-                        anchor_match = re.search(r'<a[^>]*href="[^"]*qb_saleinfo/views/\d+[^"]*"[^>]*>([^<]+)</a>', context)
+                        title = title_match.group("title")
+                    else:
+                        anchor_match = re.search(
+                            r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>',
+                            context,
+                            re.MULTILINE,
+                        )
                         if anchor_match:
-                            title = anchor_match.group(1).strip()
-                    
-                    # Pattern 3: title="제목" 속성
-                    if not title:
-                        title_attr = re.search(r'title="([^"]*' + post_id + r'[^"]*)"', context)
-                        if title_attr:
-                            title = title_attr.group(1).strip()
+                            title = anchor_match.group("title")
+                            full_url = "https://quasarzone.com" + anchor_match.group("url")
 
                     title = clean_html_title(title) if title else ""
-                    if not title or len(title) < 2:
+                    if not title:
                         continue
                     if full_url in seen:
                         continue
-                    
                     seen.add(full_url)
                     items.append({
                         "site": "quasarzone",
@@ -448,16 +440,14 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         "title": title,
                         "url": full_url,
                     })
-                    log(f"DEBUG: quasarzone found item: {title[:40]}... -> {full_url}")
 
-                # 패턴 2: 직접 <a href="/bbs/qb_saleinfo/views/...">...</a> 찾기
-                anchor_regex = r'<a[^>]*href="([^"]*qb_saleinfo/views/\d+[^"]*)"[^>]*>([^<]+)</a>'
-                for m in re.finditer(anchor_regex, html_text):
-                    url_part = m.group(1)
-                    title = clean_html_title(m.group(2))
-                    if not title or len(title) < 2:
+                # 구형 구조 호환
+                for m in re.finditer(r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>', html_text, re.MULTILINE):
+                    u = m.group("url")
+                    title = clean_html_title(m.group("title"))
+                    if not title:
                         continue
-                    full_url = url_part if url_part.startswith("http") else ("https://quasarzone.com" + url_part)
+                    full_url = "https://quasarzone.com" + u if u.startswith("/") else u
                     if full_url in seen:
                         continue
                     seen.add(full_url)
@@ -467,7 +457,6 @@ def scrape_board_items(cfg: Dict) -> List[Dict]:
                         "title": title,
                         "url": full_url,
                     })
-                    log(f"DEBUG: quasarzone found item (anchor): {title[:40]}... -> {full_url}")
 
                 return items
 
