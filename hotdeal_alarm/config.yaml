@@ -1,6 +1,6 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.1.43"
+version: "1.1.44"
 description: "핫딜 알림 + 키워드 알림 + HA"
 arch: [amd64, aarch64, armv7]
 startup: services
@@ -48,20 +48,22 @@ options:
 
   alarm_message_template: "`{title}` {url} {mall_url}"
 
-  # 텔레그램
+  # 텔레그램 (HA 통합요소 사용 시)
   telegram_enable: false
   telegram_use_direct: true
   telegram_use_ha: false
   telegram_bot_token: ""
   telegram_chat_id: ""
-  telegram_ha_service: "notify.telegram"
+  telegram_ha_service: ""   # 예: notify.my_telegram
+  telegram_target: ""
 
-  # 디스코드
+  # 디스코드 (HA 통합요소 사용 시)
   discord_enable: false
   discord_use_direct: true
   discord_use_ha: false
   discord_webhook_url: ""
-  discord_ha_service: "notify.discord"
+  discord_ha_service: ""   # 예: notify.home_assistant_notifications
+  discord_target: ""
 
   # HA푸시
   ha_notify_enable: false
@@ -107,12 +109,14 @@ schema:
   telegram_bot_token: password
   telegram_chat_id: str?
   telegram_ha_service: str
+  telegram_target: str
 
   discord_enable: bool
   discord_use_direct: bool
   discord_use_ha: bool
   discord_webhook_url: password
   discord_ha_service: str
+  discord_target: str
 
   ha_notify_enable: bool
   ha_notify_service: str

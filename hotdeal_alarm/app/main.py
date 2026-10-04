@@ -591,6 +591,16 @@ def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
         return False
 
     domain, svc = service_name.split(".", 1)
+    if domain != "notify":
+        # Telegram bot integration exposes notify services under the notify domain.
+        # Some installs also use notify.<entity_name> from the bot integration.
+        if domain == "telegram_bot":
+            domain = "notify"
+            svc = svc
+        else:
+            domain = "notify" if domain != "telegram" else "notify"
+            svc = svc if svc else service_name
+
     url = f"http://supervisor/core/api/services/{domain}/{svc}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -601,10 +611,10 @@ def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
 
     chat_id = sanitize_telegram_chat_id(cfg.get("telegram_chat_id"))
     if chat_id:
-        if service_name.startswith("telegram_") or service_name.startswith("telegram"):
-            payload["chat_id"] = chat_id
-        else:
-            payload["target"] = [chat_id]
+        # HA Telegram notify services commonly accept target/chat_id payloads.
+        # Send both to maximize compatibility across notify entities and legacy setups.
+        payload["target"] = [chat_id]
+        payload["chat_id"] = chat_id
 
     try:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
@@ -655,6 +665,9 @@ def send_discord_via_homeassistant(cfg: Dict, msg: str) -> bool:
         return False
 
     domain, svc = service_name.split(".", 1)
+    if domain != "notify":
+        domain = "notify"
+
     url = f"http://supervisor/core/api/services/{domain}/{svc}"
     headers = {
         "Authorization": f"Bearer {token}",
@@ -662,6 +675,10 @@ def send_discord_via_homeassistant(cfg: Dict, msg: str) -> bool:
     }
 
     payload = {"message": msg}
+    target = (cfg.get("discord_target") or cfg.get("discord_channel_id") or "").strip()
+    if target:
+        payload["target"] = [target]
+
     try:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
         return True
