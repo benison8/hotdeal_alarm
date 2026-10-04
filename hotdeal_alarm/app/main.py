@@ -576,18 +576,15 @@ def format_message(template: str, title: str, site: str, board: str, url: str, m
     )
 
 
-def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
-    service_name = (cfg.get("telegram_ha_service") or "notify.telegram").strip()
-    if not service_name:
-        return False
-
+def call_homeassistant_service(service_name: str, payload: Dict) -> bool:
     token = os.getenv("SUPERVISOR_TOKEN")
     if not token:
-        log("WARN: HA telegram integration requested but SUPERVISOR_TOKEN missing")
+        log("WARN: HA service requested but SUPERVISOR_TOKEN missing")
         return False
 
-    if "." not in service_name:
-        log("WARN: invalid HA telegram service name:", service_name)
+    service_name = (service_name or "").strip()
+    if not service_name or "." not in service_name:
+        log("WARN: invalid HA service name:", service_name)
         return False
 
     domain, svc = service_name.split(".", 1)
@@ -597,47 +594,76 @@ def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
         "Content-Type": "application/json",
     }
 
-    payload = {"message": msg}
-
-    chat_id = sanitize_telegram_chat_id(cfg.get("telegram_chat_id"))
-    if chat_id:
-        if service_name.startswith("telegram_") or service_name.startswith("telegram"):
-            payload["chat_id"] = chat_id
-        else:
-            payload["target"] = [chat_id]
-
     try:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
         return True
     except Exception as e:
-        log("WARN: homeassistant telegram send failed:", repr(e))
+        log("WARN: homeassistant service call failed:", service_name, repr(e))
         return False
 
 
-def send_telegram(cfg: Dict, msg: str) -> bool:
-    if not cfg.get("telegram_enable"):
+def normalize_ha_entity_id(value) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        return [text]
+    return [str(value).strip()]
+
+
+def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
+    service_name = (cfg.get("telegram_ha_service") or "").strip()
+    if not service_name:
         return False
 
-    method = get_telegram_delivery_method(cfg)
-    if method == "homeassistant":
-        return send_telegram_via_homeassistant(cfg, msg)
-
-    token = cfg.get("telegram_bot_token")
+    payload = {"message": msg}
+    entity_id = normalize_ha_entity_id(cfg.get("telegram_ha_entity_id"))
+    target = (cfg.get("telegram_target") or "").strip()
     chat_id = sanitize_telegram_chat_id(cfg.get("telegram_chat_id"))
-    if not token or not chat_id:
-        log("WARN: telegram disabled or invalid chat_id/token")
+
+    if service_name.startswith("telegram_bot."):
+        if entity_id:
+            payload["entity_id"] = entity_id
+        elif target:
+            payload["target"] = [target]
+        elif chat_id:
+            payload["target"] = [chat_id]
+        return call_homeassistant_service(service_name, payload)
+
+    if service_name.startswith("notify."):
+        if entity_id:
+            payload["entity_id"] = entity_id
+        if target:
+            payload["target"] = [target]
+        elif chat_id:
+            payload["target"] = [chat_id]
+        return call_homeassistant_service(service_name, payload)
+
+    return False
+
+
+def send_discord_via_homeassistant(cfg: Dict, msg: str) -> bool:
+    service_name = (cfg.get("discord_ha_service") or "").strip()
+    if not service_name:
         return False
-    try:
-        payload = {"chat_id": chat_id, "text": msg[:4090] + "..." if len(msg) > 4096 else msg}
-        requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json=payload,
-            timeout=20,
-        ).raise_for_status()
-        return True
-    except Exception as e:
-        log("WARN: telegram send failed:", repr(e))
-        return False
+
+    payload = {"message": msg}
+    entity_id = normalize_ha_entity_id(cfg.get("discord_ha_entity_id"))
+    target = (cfg.get("discord_target") or cfg.get("discord_channel_id") or "").strip()
+
+    if entity_id:
+        payload["entity_id"] = entity_id
+    if target:
+        payload["target"] = [target]
+
+    if service_name.startswith("notify."):
+        return call_homeassistant_service(service_name, payload)
+
+    return False
 
 
 def send_discord_via_homeassistant(cfg: Dict, msg: str) -> bool:
