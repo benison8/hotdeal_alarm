@@ -7,7 +7,7 @@ import traceback
 import sys
 import math
 import unicodedata
-from typing import Dict, List
+from typing import Dict, List, Optional
 from collections import Counter
 from datetime import datetime
 
@@ -149,7 +149,7 @@ def make_requests_session() -> requests.Session:
 
 
 # 전역 세션/스크레이퍼
-_GLOBAL_SESS: requests.Session | None = None
+_GLOBAL_SESS: Optional[requests.Session] = None
 _GLOBAL_SCRAPER = None
 
 
