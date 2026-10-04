@@ -11,6 +11,15 @@ from typing import Dict, List, Optional
 from collections import Counter
 from datetime import datetime
 
+import requests
+
+try:
+    import cloudscraper  # type: ignore[reportMissingImports]
+    _CLOUDSCRAPER_AVAILABLE = True
+except Exception:
+    cloudscraper = None
+    _CLOUDSCRAPER_AVAILABLE = False
+
 print("HOTDEAL_INIT: main.py loaded", flush=True)
 print(f"HOTDEAL_INIT: CONFIG_PATH={os.getenv('CONFIG_PATH', '/data/options.json')}", flush=True)
 
