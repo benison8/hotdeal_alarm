@@ -318,6 +318,60 @@ def send_homeassistant_notify(cfg: Dict, msg: str) -> bool:
         return False
 
 
+def send_default_ha_notify(msg: str) -> bool:
+    token = os.getenv("SUPERVISOR_TOKEN")
+    if not token:
+        return False
+
+    url = "http://supervisor/core/api/services/notify/notify"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        requests.post(url, headers=headers, json={"message": msg}, timeout=20).raise_for_status()
+        return True
+    except Exception as e:
+        log("WARN: fallback HA notify failed:", repr(e))
+        return False
+
+
+def send_push_notifications(cfg: Dict, msg: str) -> bool:
+    routes = []
+
+    if cfg.get("telegram_enable"):
+        method = (cfg.get("telegram_send_method") or "direct").strip().lower()
+        if method == "homeassistant":
+            routes.append(("telegram_ha", lambda: send_telegram_via_homeassistant(cfg, msg)))
+        else:
+            routes.append(("telegram_direct", lambda: send_telegram(cfg, msg)))
+
+    if cfg.get("discord_enable"):
+        routes.append(("discord", lambda: send_discord(cfg, msg)))
+
+    if cfg.get("ha_notify_enable"):
+        routes.append(("ha_notify", lambda: send_homeassistant_notify(cfg, msg)))
+
+    # 강제 fallback: 선택한 채널이 모두 실패해도 HA 기본 알림으로 푸시를 보낸다.
+    if not routes:
+        routes.append(("ha_default_notify", lambda: send_default_ha_notify(msg)))
+
+    sent = False
+    for name, route in routes:
+        try:
+            if route():
+                sent = True
+                break
+        except Exception as e:
+            log("WARN: notification route failed:", name, repr(e))
+
+    if not sent:
+        return send_default_ha_notify(msg)
+
+    return True
+
+
 def should_send(cfg: Dict, title: str):
     keywords = [
         normalize_match_text(k)
@@ -416,17 +470,13 @@ def main():
                     log(
                         f"ALARM(main): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}"
                     )
-                    sent_any = (send_telegram(cfg, msg) or sent_any)
-                    sent_any = (send_discord(cfg, msg) or sent_any)
-                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
+                    sent_any = (send_push_notifications(cfg, msg) or sent_any)
 
                 if send_dist:
                     log(
                         f"ALARM(dist): {site_map.get(site, site)} / {board_map.get(board, board)} | {title} | {full_url} | mall={bool(mall_url)}"
                     )
-                    sent_any = (send_telegram(cfg, msg) or sent_any)
-                    sent_any = (send_discord(cfg, msg) or sent_any)
-                    sent_any = (send_homeassistant_notify(cfg, msg) or sent_any)
+                    sent_any = (send_push_notifications(cfg, msg) or sent_any)
 
                 if sent_any:
                     state["seen"][key] = time.time()
