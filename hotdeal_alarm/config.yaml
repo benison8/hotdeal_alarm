@@ -50,8 +50,11 @@ options:
 
   # 텔레그램
   telegram_enable: false
+  telegram_send_method: "direct"
   telegram_bot_token: ""
   telegram_chat_id: ""
+  telegram_ha_service: "notify.telegram"
+  telegram_ha_title: "Hotdeal Alarm"
 
   # 디스코드
   discord_enable: false
@@ -96,8 +99,11 @@ schema:
   alarm_message_template: str
 
   telegram_enable: bool
+  telegram_send_method: list(direct, homeassistant)
   telegram_bot_token: password
   telegram_chat_id: str?
+  telegram_ha_service: str
+  telegram_ha_title: str
 
   discord_enable: bool
   discord_webhook_url: password
