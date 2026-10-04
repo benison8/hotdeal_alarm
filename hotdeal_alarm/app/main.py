@@ -249,6 +249,17 @@ def get_telegram_delivery_method(cfg: Dict) -> str:
     return "direct"
 
 
+def get_discord_delivery_method(cfg: Dict) -> str:
+    if cfg.get("discord_use_ha"):
+        return "homeassistant"
+    if cfg.get("discord_use_direct") is False:
+        return "homeassistant"
+    legacy = (cfg.get("discord_send_method") or "direct").strip().lower()
+    if legacy in {"direct", "homeassistant"}:
+        return legacy
+    return "direct"
+
+
 def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
     try:
         factor = float(keep_factor)
@@ -629,11 +640,47 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
         return False
 
 
+def send_discord_via_homeassistant(cfg: Dict, msg: str) -> bool:
+    service_name = (cfg.get("discord_ha_service") or "notify.discord").strip()
+    if not service_name:
+        return False
+
+    token = os.getenv("SUPERVISOR_TOKEN")
+    if not token:
+        log("WARN: HA discord integration requested but SUPERVISOR_TOKEN missing")
+        return False
+
+    if "." not in service_name:
+        log("WARN: invalid HA discord service name:", service_name)
+        return False
+
+    domain, svc = service_name.split(".", 1)
+    url = f"http://supervisor/core/api/services/{domain}/{svc}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {"message": msg}
+    try:
+        requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
+        return True
+    except Exception as e:
+        log("WARN: homeassistant discord send failed:", repr(e))
+        return False
+
+
 def send_discord(cfg: Dict, msg: str) -> bool:
     if not cfg.get("discord_enable"):
         return False
-    webhook = cfg.get("discord_webhook_url")
+
+    method = get_discord_delivery_method(cfg)
+    if method == "homeassistant":
+        return send_discord_via_homeassistant(cfg, msg)
+
+    webhook = (cfg.get("discord_webhook_url") or "").strip()
     if not webhook:
+        log("WARN: discord enabled but webhook URL missing")
         return False
     try:
         requests.post(webhook, json={"content": msg}, timeout=20).raise_for_status()
@@ -701,7 +748,11 @@ def send_push_notifications(cfg: Dict, msg: str) -> bool:
             routes.append(("telegram_direct", lambda: send_telegram(cfg, msg)))
 
     if cfg.get("discord_enable"):
-        routes.append(("discord", lambda: send_discord(cfg, msg)))
+        method = get_discord_delivery_method(cfg)
+        if method == "homeassistant":
+            routes.append(("discord_ha", lambda: send_discord_via_homeassistant(cfg, msg)))
+        else:
+            routes.append(("discord_direct", lambda: send_discord(cfg, msg)))
 
     if cfg.get("ha_notify_enable"):
         routes.append(("ha_notify", lambda: send_homeassistant_notify(cfg, msg)))

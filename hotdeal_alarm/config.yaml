@@ -1,6 +1,6 @@
 name: Hotdeal Alarm
 slug: hotdeal_alarm
-version: "1.1.42"
+version: "1.1.43"
 description: "핫딜 알림 + 키워드 알림 + HA"
 arch: [amd64, aarch64, armv7]
 startup: services
@@ -58,7 +58,10 @@ options:
 
   # 디스코드
   discord_enable: false
+  discord_use_direct: true
+  discord_use_ha: false
   discord_webhook_url: ""
+  discord_ha_service: "notify.discord"
 
   # HA푸시
   ha_notify_enable: false
@@ -106,7 +109,10 @@ schema:
   telegram_ha_service: str
 
   discord_enable: bool
+  discord_use_direct: bool
+  discord_use_ha: bool
   discord_webhook_url: password
+  discord_ha_service: str
 
   ha_notify_enable: bool
   ha_notify_service: str
