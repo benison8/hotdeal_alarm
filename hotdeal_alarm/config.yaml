@@ -109,7 +109,7 @@ schema:
   telegram_use_direct: bool
   telegram_use_ha: bool
   telegram_bot_token: password
-  telegram_chat_id: str?
+  telegram_chat_id: str
   telegram_ha_service: str
   telegram_ha_entity_id: list
   telegram_target: str
