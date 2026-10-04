@@ -11,13 +11,8 @@ from typing import Dict, List, Optional
 from collections import Counter
 from datetime import datetime
 
-import requests
-try:
-    import cloudscraper  # type: ignore[reportMissingImports]
-    _CLOUDSCRAPER_AVAILABLE = True
-except Exception:
-    cloudscraper = None
-    _CLOUDSCRAPER_AVAILABLE = False
+print("HOTDEAL_INIT: main.py loaded", flush=True)
+print(f"HOTDEAL_INIT: CONFIG_PATH={os.getenv('CONFIG_PATH', '/data/options.json')}", flush=True)
 
 
 DATA_DIR = "/data"
@@ -112,8 +107,24 @@ def clean_html_title(text: str) -> str:
 
 
 def load_config() -> Dict:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if not os.path.exists(CONFIG_PATH):
+        os.makedirs(os.path.dirname(CONFIG_PATH) or "/data", exist_ok=True)
+        log("WARN: config file missing, using empty config:", CONFIG_PATH)
+        return {}
+
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            log("WARN: config is not an object, using empty config")
+            return {}
+        return cfg
+    except FileNotFoundError:
+        log("WARN: config file disappeared during load, using empty config")
+        return {}
+    except Exception as e:
+        log("WARN: config load failed, using empty config:", repr(e))
+        return {}
 
 
 def load_state() -> Dict:

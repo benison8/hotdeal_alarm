@@ -2,5 +2,6 @@
 set -e
 
 export CONFIG_PATH="/data/options.json"
-exec /opt/venv/bin/python /app/main.py
+export PYTHONUNBUFFERED=1
+exec /opt/venv/bin/python -u /app/main.py
 
