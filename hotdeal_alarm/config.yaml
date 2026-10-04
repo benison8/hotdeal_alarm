@@ -111,7 +111,7 @@ schema:
   telegram_bot_token: password
   telegram_chat_id: str
   telegram_ha_service: str
-  telegram_ha_entity_id: list
+  telegram_ha_entity_id: str
   telegram_target: str
 
   discord_enable: bool
@@ -119,7 +119,7 @@ schema:
   discord_use_ha: bool
   discord_webhook_url: password
   discord_ha_service: str
-  discord_ha_entity_id: list
+  discord_ha_entity_id: str
   discord_target: str
 
   ha_notify_enable: bool
