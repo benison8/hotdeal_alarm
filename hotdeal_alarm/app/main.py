@@ -835,3 +835,7 @@ def main():
         elapsed = time.time() - cycle_start
         log(f"DEBUG: cycle end (elapsed={elapsed:.1f}s); sleeping {sleep_s}s")
         time.sleep(sleep_s)
+
+
+if __name__ == "__main__":
+    main()
