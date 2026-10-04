@@ -71,9 +71,12 @@ configuration:
 
   telegram_enable:
     name: "텔레그램 알림 사용"
-  telegram_send_method:
-    name: "텔레그램 전송 방식"
-    description: "direct: 직접 Telegram Bot API 사용 / homeassistant: Home Assistant의 telegram 통합구성요소 notify 서비스 사용"
+  telegram_use_direct:
+    name: "직접 Telegram 사용"
+    description: "텔레그램 Bot API를 직접 호출해 메시지를 보냅니다."
+  telegram_use_ha:
+    name: "Home Assistant Telegram 사용"
+    description: "Home Assistant의 Telegram 통합구성요소 notify 서비스로 메시지를 보냅니다."
   telegram_bot_token:
     name: "텔레그램 봇 토큰"
     description: "직접 전송 방식일 때만 사용합니다."
@@ -83,9 +86,6 @@ configuration:
   telegram_ha_service:
     name: "HA 텔레그램 notify 서비스"
     description: "예: notify.telegram, notify.telegram_family"
-  telegram_ha_title:
-    name: "HA 텔레그램 제목"
-    description: "텔레그램 통합구성요소에 전달할 제목입니다."
 
   discord_enable:
     name: "디스코드 알림 사용"

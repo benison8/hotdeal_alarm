@@ -208,6 +208,17 @@ def http_get_text(url: str, use_cloudscraper: bool = False) -> str:
         return ""
 
 
+def get_telegram_delivery_method(cfg: Dict) -> str:
+    if cfg.get("telegram_use_ha"):
+        return "homeassistant"
+    if cfg.get("telegram_use_direct") is False:
+        return "homeassistant"
+    legacy = (cfg.get("telegram_send_method") or "direct").strip().lower()
+    if legacy in {"direct", "homeassistant"}:
+        return legacy
+    return "direct"
+
+
 def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
     service_name = (cfg.get("telegram_ha_service") or "notify.telegram").strip()
     if not service_name:
@@ -238,10 +249,6 @@ def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
         else:
             payload["target"] = [chat_id]
 
-    title = (cfg.get("telegram_ha_title") or "Hotdeal Alarm").strip()
-    if title:
-        payload["title"] = title
-
     try:
         requests.post(url, headers=headers, json=payload, timeout=20).raise_for_status()
         return True
@@ -254,7 +261,7 @@ def send_telegram(cfg: Dict, msg: str) -> bool:
     if not cfg.get("telegram_enable"):
         return False
 
-    method = (cfg.get("telegram_send_method") or "direct").strip().lower()
+    method = get_telegram_delivery_method(cfg)
     if method == "homeassistant":
         return send_telegram_via_homeassistant(cfg, msg)
 
@@ -341,7 +348,7 @@ def send_push_notifications(cfg: Dict, msg: str) -> bool:
     routes = []
 
     if cfg.get("telegram_enable"):
-        method = (cfg.get("telegram_send_method") or "direct").strip().lower()
+        method = get_telegram_delivery_method(cfg)
         if method == "homeassistant":
             routes.append(("telegram_ha", lambda: send_telegram_via_homeassistant(cfg, msg)))
         else:
@@ -353,7 +360,6 @@ def send_push_notifications(cfg: Dict, msg: str) -> bool:
     if cfg.get("ha_notify_enable"):
         routes.append(("ha_notify", lambda: send_homeassistant_notify(cfg, msg)))
 
-    # 강제 fallback: 선택한 채널이 모두 실패해도 HA 기본 알림으로 푸시를 보낸다.
     if not routes:
         routes.append(("ha_default_notify", lambda: send_default_ha_notify(msg)))
 
