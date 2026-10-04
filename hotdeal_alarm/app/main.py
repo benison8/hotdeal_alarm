@@ -12,7 +12,7 @@ from collections import Counter
 from datetime import datetime
 
 import requests
-import cloudscraper
+import cloudscraper  # type: ignore[reportMissingImports]
 
 
 DATA_DIR = "/data"
