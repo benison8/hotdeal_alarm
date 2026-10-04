@@ -219,6 +219,322 @@ def get_telegram_delivery_method(cfg: Dict) -> str:
     return "direct"
 
 
+def trim_state_to_firstpage(state: Dict, keep_keys: List[str], keep_factor: float, keep_min: int):
+    try:
+        factor = float(keep_factor)
+    except Exception:
+        factor = 1.5
+
+    try:
+        km = int(keep_min)
+    except Exception:
+        km = 50
+
+    base = len(keep_keys) if keep_keys else 0
+    limit = max(km, int(math.ceil(base * max(1.0, factor))))
+
+    seen = state.get("seen")
+    if isinstance(seen, dict) and seen:
+        items = []
+        for k, v in seen.items():
+            ts = v if isinstance(v, (int, float)) else 0
+            items.append((k, ts))
+
+        items.sort(key=lambda x: x[1], reverse=True)
+        keep_seen = set(k for k, _ in items[:limit])
+
+        for k in list(seen.keys()):
+            if k not in keep_seen:
+                del seen[k]
+
+    keep = set(keep_keys) if keep_keys else set()
+    for bucket in ("mall_cache", "fail_count"):
+        d = state.get(bucket)
+        if not isinstance(d, dict) or not d:
+            continue
+        for k in list(d.keys()):
+            if k not in keep:
+                del d[k]
+
+
+def scrape_board_items(cfg: Dict) -> List[Dict]:
+    out: List[Dict] = []
+
+    def safe_get_text(url: str) -> str:
+        return http_get_text(url, use_cloudscraper=False) or ""
+
+    def safe_cloud_get_text(url: str) -> str:
+        return http_get_text(url, use_cloudscraper=True) or ""
+
+    if cfg.get("use_site_ppomppu"):
+        boards = ["ppomppu", "ppomppu4", "ppomppu8", "money"]
+        ppomppu_regex = r'<a[^>]*href="(?P<url>view\.php\?id=[^"]*?no=\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
+        for board in boards:
+            if not cfg.get(f"use_board_ppomppu_{board}"):
+                continue
+
+            url = f"https://www.ppomppu.co.kr/zboard/zboard.php?id={board}"
+            text = safe_get_text(url)
+            log(f"DEBUG: ppomppu ({board}) list html length:", len(text))
+            if not text:
+                continue
+
+            raw_matches = list(re.finditer(ppomppu_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
+
+            for m in raw_matches:
+                u = html.unescape(m.group("url")).strip()
+                t = clean_html_title(m.group("title"))
+
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
+                    "site": "ppomppu",
+                    "board": board,
+                    "title": t,
+                    "url": u,
+                })
+
+            log(f"DEBUG: ppomppu ({board}) regex matches:", len(board_items))
+            if board_items:
+                out.extend(board_items[1:])
+
+    if cfg.get("use_site_clien"):
+        clien_regex = r'<a[^>]*href="(?P<url>/service/(?:board|group)/[^"]+/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
+        for board in ["allsell", "jirum"]:
+            if not cfg.get(f"use_board_clien_{board}"):
+                continue
+
+            url = f"https://www.clien.net/service/group/{board}" if board == "allsell" else f"https://www.clien.net/service/board/{board}"
+            text = safe_get_text(url)
+            log(f"DEBUG: clien ({board}) list html length:", len(text))
+            if not text:
+                continue
+
+            raw_matches = list(re.finditer(clien_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
+
+            for m in raw_matches:
+                u = m.group("url").strip()
+                t = clean_html_title(m.group("title"))
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
+                    "site": "clien",
+                    "board": board,
+                    "title": t,
+                    "url": u,
+                })
+
+            log(f"DEBUG: clien ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    if cfg.get("use_site_ruriweb"):
+        ruri_regex = r'<a[^>]*href="(?P<url>(?:https?://bbs\.ruliweb\.com)?/market/board/\d+/read/\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
+        for board in ["1020", "600004"]:
+            if not cfg.get(f"use_board_ruriweb_{board}"):
+                continue
+
+            url = f"https://bbs.ruliweb.com/market/board/{board}"
+            text = safe_get_text(url)
+            log(f"DEBUG: ruriweb ({board}) list html length:", len(text))
+            if not text:
+                continue
+
+            raw_matches = list(re.finditer(ruri_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
+
+            for m in raw_matches:
+                u = m.group("url").strip()
+                t = clean_html_title(m.group("title"))
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
+                    "site": "ruriweb",
+                    "board": board,
+                    "title": t,
+                    "url": u,
+                })
+
+            log(f"DEBUG: ruriweb ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    if cfg.get("use_site_coolenjoy"):
+        boards = ["jirum"]
+        cool_regex = r'<a[^>]*href="(?P<url>(?:https?://coolenjoy\.net)?/bbs/jirum/\d+[^"]*|\./\d+[^"]*)"[^>]*>(?P<title>[\s\S]*?)</a>'
+
+        for board in boards:
+            if not cfg.get(f"use_board_coolenjoy_{board}"):
+                continue
+
+            url = f"https://coolenjoy.net/bbs/{board}"
+            text = safe_get_text(url)
+            log(f"DEBUG: coolenjoy ({board}) list html length:", len(text))
+            if not text:
+                continue
+
+            raw_matches = list(re.finditer(cool_regex, text, re.MULTILINE))
+            seen_urls = set()
+            board_items = []
+
+            for m in raw_matches:
+                u = m.group("url").strip()
+                if u.startswith("./"):
+                    u = f"https://coolenjoy.net/bbs/jirum/{u[2:]}"
+                elif u.startswith("/"):
+                    u = "https://coolenjoy.net" + u
+
+                t = clean_html_title(m.group("title"))
+                if not t or len(t) < 2 or u in seen_urls:
+                    continue
+                seen_urls.add(u)
+
+                board_items.append({
+                    "site": "coolenjoy",
+                    "board": board,
+                    "title": t,
+                    "url": u,
+                })
+
+            log(f"DEBUG: coolenjoy ({board}) regex matches:", len(board_items))
+            out.extend(board_items)
+
+    if cfg.get("use_site_quasarzone"):
+        board = "qb_saleinfo"
+        if cfg.get("use_board_quasarzone_qb_saleinfo"):
+            url = f"https://quasarzone.com/bbs/{board}"
+
+            def parse_quasarzone_items(html_text: str):
+                if not html_text:
+                    return []
+
+                items = []
+                seen = set()
+                url_regex = r'https?://quasarzone\.com/bbs/qb_saleinfo/views/\d+|/bbs/qb_saleinfo/views/\d+'
+
+                for m in re.finditer(url_regex, html_text):
+                    raw_url = m.group(0)
+                    full_url = raw_url if raw_url.startswith("http") else ("https://quasarzone.com" + raw_url)
+
+                    context_start = max(0, m.start() - 200)
+                    context_end = min(len(html_text), m.end() + 800)
+                    context = html_text[context_start:context_end]
+
+                    title = None
+                    title_match = re.search(r'\[\[(?P<title>[^\]]+)\]\]', context)
+                    if title_match:
+                        title = title_match.group("title")
+                    else:
+                        anchor_match = re.search(
+                            r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>',
+                            context,
+                            re.MULTILINE,
+                        )
+                        if anchor_match:
+                            title = anchor_match.group("title")
+                            full_url = "https://quasarzone.com" + anchor_match.group("url")
+
+                    title = clean_html_title(title) if title else ""
+                    if not title:
+                        continue
+                    if full_url in seen:
+                        continue
+                    seen.add(full_url)
+                    items.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": title,
+                        "url": full_url,
+                    })
+
+                for m in re.finditer(r'<a[^>]*href="(?P<url>/bbs/qb_saleinfo/views/\d+)"[^>]*>(?P<title>[\s\S]*?)</a>', html_text, re.MULTILINE):
+                    u = m.group("url")
+                    title = clean_html_title(m.group("title"))
+                    if not title:
+                        continue
+                    full_url = "https://quasarzone.com" + u if u.startswith("/") else u
+                    if full_url in seen:
+                        continue
+                    seen.add(full_url)
+                    items.append({
+                        "site": "quasarzone",
+                        "board": board,
+                        "title": title,
+                        "url": full_url,
+                    })
+
+                return items
+
+            text = safe_cloud_get_text(url)
+            log("DEBUG: quasarzone (qb_saleinfo) list html length (cloudscraper):", len(text))
+            matches = parse_quasarzone_items(text)
+            log("DEBUG: quasarzone (qb_saleinfo) parse matches (cloudscraper):", len(matches))
+            for item in matches:
+                out.append(item)
+
+            if (not text) or (len(matches) == 0):
+                log("DEBUG: quasarzone fallback to http_get_text(use_cloudscraper=True)")
+                text2 = http_get_text(url, use_cloudscraper=True)
+                log("DEBUG: quasarzone (qb_saleinfo) list html length (fallback):", len(text2))
+                matches2 = parse_quasarzone_items(text2)
+                log("DEBUG: quasarzone (qb_saleinfo) parse matches (fallback):", len(matches2))
+                for item in matches2:
+                    out.append(item)
+
+    return out
+
+
+def scrape_mall_url(site: str, url: str) -> str:
+    regex = None
+    if site == "ppomppu":
+        regex = r'class="[^"]*topTitle-link[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
+    elif site == "clien":
+        regex = r'class="[^"]*outlink[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
+    elif site == "ruriweb":
+        regex = r'class="[^"]*(?:source_url|url)[^"]*"[^>]*href="(?P<mall_url>https?://[^"]+)"'
+    elif site == "coolenjoy":
+        regex = r'alt="관련링크"[^>]*>[\s\S]*?<a[^>]*href="(?P<mall_url>https?://[^"]+)"'
+    elif site == "quasarzone":
+        regex = r'<th>\s*링크\s*</th>[\s\S]*?<td>[\s\S]*?<a[^>]*href="(?P<mall_url>https?://[^"]+)"'
+
+    if not regex:
+        return ""
+
+    full = url if url.startswith("http") else (get_url_prefix(site) + url)
+    text = http_get_text(full, use_cloudscraper=(site == "quasarzone"))
+    if not text:
+        return ""
+
+    m = re.search(regex, text, re.MULTILINE)
+    if not m:
+        return ""
+
+    return html.unescape(m.group("mall_url")).strip()
+
+
+def format_message(template: str, title: str, site: str, board: str, url: str, mall_url: str) -> str:
+    template = (template or "").replace("\\n", "\n")
+    return (
+        template.replace("{title}", title)
+        .replace("{site}", site_map.get(site, site))
+        .replace("{board}", board_map.get(board, board))
+        .replace("{url}", url)
+        .replace("{mall_url}", mall_url or "")
+    )
+
+
 def send_telegram_via_homeassistant(cfg: Dict, msg: str) -> bool:
     service_name = (cfg.get("telegram_ha_service") or "notify.telegram").strip()
     if not service_name:
