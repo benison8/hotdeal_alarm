@@ -12,7 +12,12 @@ from collections import Counter
 from datetime import datetime
 
 import requests
-import cloudscraper  # type: ignore[reportMissingImports]
+try:
+    import cloudscraper  # type: ignore[reportMissingImports]
+    _CLOUDSCRAPER_AVAILABLE = True
+except Exception:
+    cloudscraper = None
+    _CLOUDSCRAPER_AVAILABLE = False
 
 
 DATA_DIR = "/data"
@@ -162,6 +167,8 @@ def get_global_sess() -> requests.Session:
 
 def get_global_scraper():
     global _GLOBAL_SCRAPER
+    if not _CLOUDSCRAPER_AVAILABLE:
+        return None
     if _GLOBAL_SCRAPER is None:
         _GLOBAL_SCRAPER = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "android", "desktop": False}
@@ -171,6 +178,9 @@ def get_global_scraper():
 
 def recreate_global_scraper():
     global _GLOBAL_SCRAPER
+    if not _CLOUDSCRAPER_AVAILABLE:
+        _GLOBAL_SCRAPER = None
+        return None
     _GLOBAL_SCRAPER = cloudscraper.create_scraper(
         browser={"browser": "chrome", "platform": "android", "desktop": False}
     )
